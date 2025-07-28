@@ -149,3 +149,120 @@ button {
   border: 1px solid #bee3f8;
   display: block;
 }
+
+.backup-section {
+  margin-top: 40px;
+  padding-top: 30px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.backup-section h3 {
+  margin: 0 0 8px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.backup-description {
+  margin: 0 0 12px 0;
+  color: #666;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.backup-links {
+  margin: 0 0 20px 0;
+}
+
+.backup-link {
+  display: inline-flex;
+  align-items: center;
+  color: #667eea;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #f8faff;
+  border: 1px solid #e2e8f0;
+  transition: all 0.3s ease;
+}
+
+.backup-link:hover {
+  background: #ebf4ff;
+  border-color: #667eea;
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+
+.timestamps-section {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 16px;
+  margin: 20px 0;
+}
+
+.timestamp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.timestamp-row:not(:last-child) {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.timestamp-label {
+  font-weight: 500;
+  color: #4a5568;
+  font-size: 14px;
+}
+
+.timestamp-value {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier,
+    monospace;
+  font-size: 13px;
+  color: #2d3748;
+  background: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.backup-button {
+  background: #38a169;
+  color: white;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.backup-button:hover:not(:disabled) {
+  background: #2f855a;
+  transform: translateY(-1px);
+}
+
+.backup-button:disabled {
+  background: #a0aec0;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.backup-button.processing {
+  background: #ed8936;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(237, 137, 54, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(237, 137, 54, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(237, 137, 54, 0);
+  }
+}

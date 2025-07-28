@@ -5,10 +5,15 @@
   "description": "A Chrome extension that automatically exports your Raindrop.io bookmarks daily and syncs them to your browser bookmarks—no manual export required.",
   "permissions": [
     "bookmarks",
-    "storage"
+    "storage",
+    "notifications"
   ],
   "host_permissions": [
-    "https://api.raindrop.io/*"
+    "https://api.raindrop.io/*",
+    "https://up.raindrop.io/*",
+    "https://*.amazonaws.com/*",
+    "https://*.s3.amazonaws.com/*",
+    "https://s3-*.amazonaws.com/*"
   ],
   "background": {
     "service_worker": "src/background.js",

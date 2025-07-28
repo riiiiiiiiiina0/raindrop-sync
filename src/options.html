@@ -30,6 +30,30 @@
         <button id="testButton">Test Connection</button>
       </div>
 
+      <div class="backup-section">
+        <h3>Backup Management</h3>
+        <p class="backup-description">Create and download a backup of your Raindrop.io bookmarks.</p>
+        <p class="backup-links">
+          <a href="https://app.raindrop.io/settings/backups" target="_blank" class="backup-link">
+            📋 View all backups in Raindrop.io
+          </a>
+        </p>
+
+        <div class="timestamps-section">
+          <div class="timestamp-row">
+            <span class="timestamp-label">📋 Last Backup Created:</span>
+            <span id="lastBackupTime" class="timestamp-value">Never</span>
+          </div>
+          <div class="timestamp-row">
+            <span class="timestamp-label">📚 Last Import to Browser:</span>
+            <span id="lastImportTime" class="timestamp-value">Never</span>
+          </div>
+        </div>
+
+        <button id="backupButton" class="backup-button">Create & Download Backup</button>
+        <div id="backupStatus" class="status"></div>
+      </div>
+
       <div id="status" class="status"></div>
     </main>
   </div>

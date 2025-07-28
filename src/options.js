@@ -11,9 +11,30 @@ document.addEventListener('DOMContentLoaded', function () {
   const statusDiv = /** @type {HTMLDivElement} */ (
     document.getElementById('status')
   );
+  const backupButton = /** @type {HTMLButtonElement} */ (
+    document.getElementById('backupButton')
+  );
+  const backupStatusDiv = /** @type {HTMLDivElement} */ (
+    document.getElementById('backupStatus')
+  );
+  const lastBackupTimeElement = /** @type {HTMLSpanElement} */ (
+    document.getElementById('lastBackupTime')
+  );
+  const lastImportTimeElement = /** @type {HTMLSpanElement} */ (
+    document.getElementById('lastImportTime')
+  );
 
   // Check if all elements exist
-  if (!apiTokenInput || !saveButton || !testButton || !statusDiv) {
+  if (
+    !apiTokenInput ||
+    !saveButton ||
+    !testButton ||
+    !statusDiv ||
+    !backupButton ||
+    !backupStatusDiv ||
+    !lastBackupTimeElement ||
+    !lastImportTimeElement
+  ) {
     console.error('Required elements not found');
     return;
   }
@@ -21,16 +42,56 @@ document.addEventListener('DOMContentLoaded', function () {
   // Load saved token when page loads
   loadSavedToken();
 
+  // Load saved timestamps when page loads
+  loadTimestamps();
+
+  // Check backup status when page loads
+  checkBackupStatus();
+
   // Save token when save button is clicked
   saveButton.addEventListener('click', saveToken);
 
   // Test connection when test button is clicked
   testButton.addEventListener('click', testConnection);
 
+  // Start backup process when backup button is clicked
+  backupButton.addEventListener('click', startBackupProcess);
+
   // Save token when Enter is pressed in the input field
   apiTokenInput.addEventListener('keypress', function (e) {
     if (e.key === 'Enter') {
       saveToken();
+    }
+  });
+
+  // Listen for status updates from background script
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'statusUpdate') {
+      showBackupStatus(request.status, request.type);
+      updateButtonState(request.step, request.isProcessing);
+
+      // Reload timestamps when backup completes successfully
+      if (request.type === 'success' && request.step === 'completed') {
+        setTimeout(() => {
+          loadTimestamps();
+        }, 1000); // Small delay to ensure storage is updated
+      }
+    } else if (request.action === 'refreshTimestamps') {
+      // Handle direct timestamp refresh with provided values
+      if (request.lastBackupTime) {
+        lastBackupTimeElement.textContent = formatTimestamp(
+          request.lastBackupTime,
+        );
+      }
+      if (request.lastImportTime) {
+        lastImportTimeElement.textContent = formatTimestamp(
+          request.lastImportTime,
+        );
+      }
+      // Also reload from storage to ensure consistency
+      setTimeout(() => {
+        loadTimestamps();
+      }, 500);
     }
   });
 
@@ -40,6 +101,29 @@ document.addEventListener('DOMContentLoaded', function () {
         apiTokenInput.value = result.raindropToken;
       }
     });
+  }
+
+  function loadTimestamps() {
+    chrome.storage.sync.get(
+      ['lastBackupTime', 'lastImportTime'],
+      function (result) {
+        if (result.lastBackupTime) {
+          lastBackupTimeElement.textContent = formatTimestamp(
+            result.lastBackupTime,
+          );
+        }
+        if (result.lastImportTime) {
+          lastImportTimeElement.textContent = formatTimestamp(
+            result.lastImportTime,
+          );
+        }
+      },
+    );
+  }
+
+  function formatTimestamp(timestamp) {
+    const date = new Date(timestamp);
+    return date.toLocaleString();
   }
 
   function saveToken() {
@@ -120,6 +204,87 @@ document.addEventListener('DOMContentLoaded', function () {
       setTimeout(() => {
         statusDiv.style.display = 'none';
       }, 3000);
+    }
+  }
+
+  function showBackupStatus(message, type) {
+    backupStatusDiv.textContent = message;
+    backupStatusDiv.className = `status ${type}`;
+    backupStatusDiv.style.display = 'block';
+
+    // Auto-hide success messages after 5 seconds
+    if (type === 'success') {
+      setTimeout(() => {
+        backupStatusDiv.style.display = 'none';
+      }, 5000);
+    }
+  }
+
+  function updateButtonState(step, isProcessing) {
+    if (isProcessing) {
+      backupButton.disabled = true;
+      backupButton.className = 'backup-button processing';
+
+      // Update button text based on current step
+      switch (step) {
+        case 'checking':
+          backupButton.textContent = '⏳ Checking for recent backup...';
+          break;
+        case 'creating':
+          backupButton.textContent = '⏳ Creating backup...';
+          break;
+        case 'polling':
+          backupButton.textContent = '⏳ Waiting for backup...';
+          break;
+        case 'downloading':
+          backupButton.textContent = '⏳ Downloading...';
+          break;
+        default:
+          backupButton.textContent = '⏳ Processing...';
+      }
+    } else {
+      // Reset button to normal state
+      backupButton.disabled = false;
+      backupButton.className = 'backup-button';
+      backupButton.textContent = 'Create & Download Backup';
+    }
+  }
+
+  async function checkBackupStatus() {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'getBackupStatus',
+      });
+
+      if (response && response.isProcessing) {
+        showBackupStatus('Backup process is running in background...', 'info');
+        updateButtonState('processing', true);
+      }
+    } catch (error) {
+      console.log('Could not get backup status:', error);
+    }
+  }
+
+  async function startBackupProcess() {
+    const token = apiTokenInput.value.trim();
+    if (!token) {
+      showBackupStatus('Please enter and save your API token first', 'error');
+      return;
+    }
+
+    try {
+      showBackupStatus('Starting backup process...', 'info');
+
+      const response = await chrome.runtime.sendMessage({
+        action: 'startBackup',
+      });
+
+      if (response && !response.success) {
+        showBackupStatus(response.message || 'Failed to start backup', 'error');
+      }
+    } catch (error) {
+      console.error('Error starting backup process:', error);
+      showBackupStatus(`Error starting backup: ${error.message}`, 'error');
     }
   }
 });
