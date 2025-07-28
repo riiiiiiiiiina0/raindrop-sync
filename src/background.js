@@ -793,9 +793,58 @@ async function handleBackupPolling() {
 }
 
 // Auto backup management
-async function setupAutoBackup(enabled, frequency = 'daily') {
+async function setupAutoBackup(
+  enabled,
+  frequency = 'daily',
+  preserveScheduled = true,
+) {
   if (enabled) {
-    // Calculate delay and period based on frequency
+    // Check if we should preserve an existing scheduled time
+    if (preserveScheduled) {
+      const storedResult = await chrome.storage.sync.get([
+        'nextAutoBackupTime',
+      ]);
+      const existingAlarm = await chrome.alarms.get('autoBackup');
+
+      if (
+        storedResult.nextAutoBackupTime &&
+        storedResult.nextAutoBackupTime > Date.now()
+      ) {
+        // We have a valid future backup time stored, use it
+        const delayInMinutes = Math.max(
+          1,
+          Math.ceil((storedResult.nextAutoBackupTime - Date.now()) / 60000),
+        );
+
+        // Calculate period based on frequency for future alarms
+        let periodInMinutes;
+        switch (frequency) {
+          case 'hourly':
+            periodInMinutes = 60;
+            break;
+          case 'weekly':
+            periodInMinutes = 7 * 24 * 60;
+            break;
+          case 'daily':
+          default:
+            periodInMinutes = 24 * 60;
+            break;
+        }
+
+        chrome.alarms.create('autoBackup', {
+          delayInMinutes: delayInMinutes,
+          periodInMinutes: periodInMinutes,
+        });
+        console.log(
+          `Auto backup alarm restored - next backup at ${new Date(
+            storedResult.nextAutoBackupTime,
+          ).toLocaleString()}`,
+        );
+        return;
+      }
+    }
+
+    // Calculate delay and period based on frequency for new schedule
     let delayInMinutes, periodInMinutes;
 
     switch (frequency) {
@@ -819,10 +868,20 @@ async function setupAutoBackup(enabled, frequency = 'daily') {
       delayInMinutes: delayInMinutes,
       periodInMinutes: periodInMinutes,
     });
-    console.log(`Auto backup alarm created - will trigger ${frequency}`);
+
+    // Store the scheduled time for persistence across restarts
+    const nextBackupTime = Date.now() + delayInMinutes * 60 * 1000;
+    await chrome.storage.sync.set({ nextAutoBackupTime: nextBackupTime });
+
+    console.log(
+      `Auto backup alarm created - will trigger ${frequency} at ${new Date(
+        nextBackupTime,
+      ).toLocaleString()}`,
+    );
   } else {
-    // Clear the alarm
+    // Clear the alarm and stored time
     chrome.alarms.clear('autoBackup');
+    chrome.storage.sync.remove(['nextAutoBackupTime']);
     console.log('Auto backup alarm cleared');
   }
 }
@@ -831,15 +890,31 @@ async function setupAutoBackup(enabled, frequency = 'daily') {
 async function getNextBackupTime(callback) {
   try {
     // Check if auto backup is enabled
-    const result = await chrome.storage.sync.get(['autoBackupEnabled']);
+    const result = await chrome.storage.sync.get([
+      'autoBackupEnabled',
+      'nextAutoBackupTime',
+    ]);
     if (!result.autoBackupEnabled) {
       callback({ success: false, message: 'Auto backup is disabled' });
       return;
     }
 
-    // Get the alarm information
+    // First try to get the stored next backup time
+    if (result.nextAutoBackupTime && result.nextAutoBackupTime > Date.now()) {
+      callback({
+        success: true,
+        nextBackupTime: result.nextAutoBackupTime,
+      });
+      return;
+    }
+
+    // Fall back to alarm information if stored time is not available or expired
     const alarm = await chrome.alarms.get('autoBackup');
     if (alarm && alarm.scheduledTime) {
+      // Update stored time with alarm time for consistency
+      await chrome.storage.sync.set({
+        nextAutoBackupTime: alarm.scheduledTime,
+      });
       callback({
         success: true,
         nextBackupTime: alarm.scheduledTime,
@@ -873,9 +948,39 @@ async function initializeAutoBackup() {
 }
 
 // Listen for alarm events
-chrome.alarms.onAlarm.addListener((alarm) => {
+chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'autoBackup') {
     console.log('Auto backup alarm triggered');
+
+    // Update the stored next backup time for the next occurrence
+    try {
+      const result = await chrome.storage.sync.get(['backupFrequency']);
+      const frequency = result.backupFrequency || 'daily';
+
+      let nextIntervalMs;
+      switch (frequency) {
+        case 'hourly':
+          nextIntervalMs = 60 * 60 * 1000; // 1 hour
+          break;
+        case 'weekly':
+          nextIntervalMs = 7 * 24 * 60 * 60 * 1000; // 1 week
+          break;
+        case 'daily':
+        default:
+          nextIntervalMs = 24 * 60 * 60 * 1000; // 1 day
+          break;
+      }
+
+      const nextBackupTime = Date.now() + nextIntervalMs;
+      await chrome.storage.sync.set({ nextAutoBackupTime: nextBackupTime });
+      console.log(
+        `Next auto backup scheduled for: ${new Date(
+          nextBackupTime,
+        ).toLocaleString()}`,
+      );
+    } catch (error) {
+      console.error('Error updating next backup time:', error);
+    }
 
     // Check if we're not already processing a backup
     if (!isBackupProcessing) {
@@ -930,7 +1035,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'updateAutoBackup') {
     const frequency = request.frequency || 'daily';
-    setupAutoBackup(request.enabled, frequency);
+    // When user updates settings, create a fresh schedule (don't preserve existing)
+    setupAutoBackup(request.enabled, frequency, false);
     sendResponse({ success: true });
     return true;
   }
