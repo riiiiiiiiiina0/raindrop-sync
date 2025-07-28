@@ -39,6 +39,20 @@
           </a>
         </p>
 
+        <div class="auto-backup-section">
+          <h4>Auto Backup</h4>
+          <div class="form-group">
+            <label for="autoBackupEnabled" class="checkbox-label">
+              <input type="checkbox" id="autoBackupEnabled">
+              Enable automatic backup every hour
+            </label>
+            <div class="help-text">
+              <p>When enabled, backups will be automatically created and downloaded every hour.</p>
+            </div>
+          </div>
+          <div id="autoBackupStatus" class="auto-backup-status"></div>
+        </div>
+
         <div class="timestamps-section">
           <div class="timestamp-row">
             <span class="timestamp-label">📋 Last Backup Created:</span>
@@ -47,6 +61,10 @@
           <div class="timestamp-row">
             <span class="timestamp-label">📚 Last Import to Browser:</span>
             <span id="lastImportTime" class="timestamp-value">Never</span>
+          </div>
+          <div class="timestamp-row">
+            <span class="timestamp-label">⏰ Next Scheduled Backup:</span>
+            <span id="nextBackupTime" class="timestamp-value">Not scheduled</span>
           </div>
         </div>
 

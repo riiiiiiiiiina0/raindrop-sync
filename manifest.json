@@ -6,7 +6,8 @@
   "permissions": [
     "bookmarks",
     "storage",
-    "notifications"
+    "notifications",
+    "alarms"
   ],
   "host_permissions": [
     "https://api.raindrop.io/*",

@@ -3,8 +3,111 @@ console.log('Raindrop Sync background service worker started');
 // Global state for backup process
 let isBackupProcessing = false;
 let backupTimeoutId = null;
-let pollIntervalId = null;
 let currentBackupStartTime = null;
+
+// Restore backup state from storage on startup
+async function restoreBackupState() {
+  try {
+    // First, clean up any stale polling alarms from previous sessions
+    await cleanupStaleAlarms();
+
+    const result = await chrome.storage.local.get([
+      'backupProcessing',
+      'backupStartTime',
+      'backupToken',
+    ]);
+    if (
+      result.backupProcessing &&
+      result.backupStartTime &&
+      result.backupToken
+    ) {
+      isBackupProcessing = true;
+      currentBackupStartTime = result.backupStartTime;
+
+      console.log(
+        'Restored backup state from storage - resuming backup process',
+      );
+
+      // Check if the backup has been running too long (over 30 minutes)
+      const timeElapsed = Date.now() - currentBackupStartTime;
+      if (timeElapsed > 30 * 60 * 1000) {
+        console.log('Backup process has been running too long, cleaning up');
+        cleanupBackupProcess();
+        return;
+      }
+
+      // Set badge to show backup is in progress
+      setBadge('⏳');
+      sendStatusUpdate('Resuming backup process...', 'info', 'polling');
+
+      // Create timeout for remaining time
+      const remainingTime = 30 * 60 * 1000 - timeElapsed;
+      backupTimeoutId = setTimeout(() => {
+        cleanupBackupProcess();
+        sendStatusUpdate('Backup process timed out after 30 minutes', 'error');
+        showNotification(
+          'Backup Failed',
+          'The backup process timed out after 30 minutes.',
+        );
+      }, remainingTime);
+
+      // Resume polling by setting up the alarm
+      setupPollingAlarm();
+    }
+  } catch (error) {
+    console.error('Error restoring backup state:', error);
+  }
+}
+
+// Save backup state to storage
+async function saveBackupState(token) {
+  try {
+    await chrome.storage.local.set({
+      backupProcessing: isBackupProcessing,
+      backupStartTime: currentBackupStartTime,
+      backupToken: token,
+    });
+  } catch (error) {
+    console.error('Error saving backup state:', error);
+  }
+}
+
+// Clear backup state from storage
+async function clearBackupState() {
+  try {
+    await chrome.storage.local.remove([
+      'backupProcessing',
+      'backupStartTime',
+      'backupToken',
+    ]);
+  } catch (error) {
+    console.error('Error clearing backup state:', error);
+  }
+}
+
+// Setup polling alarm instead of setInterval
+function setupPollingAlarm() {
+  chrome.alarms.create('backupPolling', {
+    delayInMinutes: 1, // Check in 1 minute
+    periodInMinutes: 1, // Check every minute
+  });
+}
+
+// Clear polling alarm
+function clearPollingAlarm() {
+  chrome.alarms.clear('backupPolling');
+}
+
+// Clean up stale alarms from previous sessions
+async function cleanupStaleAlarms() {
+  try {
+    // Clear any existing polling alarms that might be left from previous sessions
+    await chrome.alarms.clear('backupPolling');
+    console.log('Cleaned up stale polling alarms');
+  } catch (error) {
+    console.error('Error cleaning up stale alarms:', error);
+  }
+}
 
 // Badge management functions
 async function setBadge(text) {
@@ -492,47 +595,6 @@ async function downloadBackup(token, backup) {
   }
 }
 
-// Poll for backup completion
-async function pollForBackupCompletion(token, startTime) {
-  pollIntervalId = setInterval(async () => {
-    try {
-      const newBackup = await checkForNewBackup(token, startTime);
-      if (newBackup) {
-        // Stop polling and download the backup
-        clearInterval(pollIntervalId);
-        sendStatusUpdate(
-          'New backup found! Downloading...',
-          'info',
-          'downloading',
-        );
-
-        const success = await downloadBackup(token, newBackup);
-        if (success) {
-          // Complete the process
-          cleanupBackupProcess();
-          sendStatusUpdate(
-            'Backup created and downloaded successfully!',
-            'success',
-            'completed',
-          );
-          showNotification(
-            'Raindrop Sync Complete',
-            'Your Raindrop.io backup has been downloaded and imported to browser bookmarks successfully.',
-          );
-        }
-      }
-    } catch (error) {
-      console.error('Error during backup polling:', error);
-      clearInterval(pollIntervalId);
-      cleanupBackupProcess();
-      sendStatusUpdate(
-        `Error checking backup status: ${error.message}`,
-        'error',
-      );
-    }
-  }, 60_000); // Check every 60 seconds
-}
-
 // Cleanup backup process
 function cleanupBackupProcess() {
   isBackupProcessing = false;
@@ -544,13 +606,14 @@ function cleanupBackupProcess() {
     backupTimeoutId = null;
   }
 
-  if (pollIntervalId) {
-    clearInterval(pollIntervalId);
-    pollIntervalId = null;
-  }
+  // Clear polling alarm
+  clearPollingAlarm();
 
   // Reset badge
   clearBadge();
+
+  // Clear local storage state
+  clearBackupState();
 
   // Send cleanup notification to options page
   sendStatusUpdate('Process cleanup completed', 'info', 'cleanup');
@@ -572,6 +635,9 @@ async function startBackupProcess(token) {
   try {
     isBackupProcessing = true;
     currentBackupStartTime = Date.now();
+
+    // Save backup state to storage
+    await saveBackupState(token);
 
     // Step 1: Show loading badge and status
     setBadge('⏳');
@@ -643,7 +709,8 @@ async function startBackupProcess(token) {
       'polling',
     );
 
-    pollForBackupCompletion(token, currentBackupStartTime);
+    // Set up polling alarm
+    setupPollingAlarm();
 
     return { success: true, message: 'Backup process started' };
   } catch (error) {
@@ -658,15 +725,162 @@ async function startBackupProcess(token) {
   }
 }
 
+function startBackup(callback) {
+  // Get token from storage and start backup
+  chrome.storage.sync.get(['raindropToken'], async (result) => {
+    const token = result.raindropToken;
+    const response = await startBackupProcess(token);
+    callback?.(response);
+  });
+}
+
+// Handle backup polling alarm
+async function handleBackupPolling() {
+  try {
+    // Get backup state from storage
+    const result = await chrome.storage.local.get([
+      'backupProcessing',
+      'backupStartTime',
+      'backupToken',
+    ]);
+
+    if (
+      !result.backupProcessing ||
+      !result.backupStartTime ||
+      !result.backupToken
+    ) {
+      console.log('No backup in progress, clearing polling alarm');
+      clearPollingAlarm();
+      return;
+    }
+
+    const token = result.backupToken;
+    const startTime = result.backupStartTime;
+
+    console.log('Checking for new backup completion...');
+
+    const newBackup = await checkForNewBackup(token, startTime);
+    if (newBackup) {
+      // Stop polling and download the backup
+      clearPollingAlarm();
+      sendStatusUpdate(
+        'New backup found! Downloading...',
+        'info',
+        'downloading',
+      );
+
+      const success = await downloadBackup(token, newBackup);
+      if (success) {
+        // Complete the process
+        cleanupBackupProcess();
+        sendStatusUpdate(
+          'Backup created and downloaded successfully!',
+          'success',
+          'completed',
+        );
+        showNotification(
+          'Raindrop Sync Complete',
+          'Your Raindrop.io backup has been downloaded and imported to browser bookmarks successfully.',
+        );
+      }
+    }
+  } catch (error) {
+    console.error('Error during backup polling:', error);
+    clearPollingAlarm();
+    cleanupBackupProcess();
+    sendStatusUpdate(`Error checking backup status: ${error.message}`, 'error');
+  }
+}
+
+// Auto backup management
+async function setupAutoBackup(enabled) {
+  if (enabled) {
+    // Create alarm to trigger every hour
+    chrome.alarms.create('autoBackup', {
+      delayInMinutes: 60, // Start in 1 hour
+      periodInMinutes: 60, // Repeat every hour
+    });
+    console.log('Auto backup alarm created - will trigger every hour');
+  } else {
+    // Clear the alarm
+    chrome.alarms.clear('autoBackup');
+    console.log('Auto backup alarm cleared');
+  }
+}
+
+// Get next backup time
+async function getNextBackupTime(callback) {
+  try {
+    // Check if auto backup is enabled
+    const result = await chrome.storage.sync.get(['autoBackupEnabled']);
+    if (!result.autoBackupEnabled) {
+      callback({ success: false, message: 'Auto backup is disabled' });
+      return;
+    }
+
+    // Get the alarm information
+    const alarm = await chrome.alarms.get('autoBackup');
+    if (alarm && alarm.scheduledTime) {
+      callback({
+        success: true,
+        nextBackupTime: alarm.scheduledTime,
+      });
+    } else {
+      callback({ success: false, message: 'No backup alarm scheduled' });
+    }
+  } catch (error) {
+    console.error('Error getting next backup time:', error);
+    callback({ success: false, message: error.message });
+  }
+}
+
+// Initialize auto backup on extension startup
+async function initializeAutoBackup() {
+  try {
+    const result = await chrome.storage.sync.get(['autoBackupEnabled']);
+    if (result.autoBackupEnabled) {
+      setupAutoBackup(true);
+      console.log('Auto backup initialized on startup');
+    }
+  } catch (error) {
+    console.error('Error initializing auto backup:', error);
+  }
+}
+
+// Listen for alarm events
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'autoBackup') {
+    console.log('Auto backup alarm triggered');
+
+    // Check if we're not already processing a backup
+    if (!isBackupProcessing) {
+      startBackup((response) => {
+        if (response.success) {
+          console.log('Auto backup completed successfully');
+        } else {
+          console.error('Auto backup failed:', response.message);
+        }
+      });
+    } else {
+      console.log('Auto backup skipped - backup already in progress');
+    }
+  } else if (alarm.name === 'backupPolling') {
+    console.log('Backup polling alarm triggered');
+
+    // Only proceed if we have a backup in progress
+    if (isBackupProcessing && currentBackupStartTime) {
+      handleBackupPolling();
+    } else {
+      // No backup in progress, clear the polling alarm
+      clearPollingAlarm();
+    }
+  }
+});
+
 // Message listener for communication with options page
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'startBackup') {
-    // Get token from storage and start backup
-    chrome.storage.sync.get(['raindropToken'], async (result) => {
-      const token = result.raindropToken;
-      const response = await startBackupProcess(token);
-      sendResponse(response);
-    });
+    startBackup(sendResponse);
     return true; // Will respond asynchronously
   }
 
@@ -688,15 +902,63 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     return true;
   }
+
+  if (request.action === 'updateAutoBackup') {
+    setupAutoBackup(request.enabled);
+    sendResponse({ success: true });
+    return true;
+  }
+
+  if (request.action === 'getNextBackupTime') {
+    getNextBackupTime(sendResponse);
+    return true; // Will respond asynchronously
+  }
 });
 
 // Handle service worker lifecycle
 chrome.runtime.onStartup.addListener(() => {
   console.log('Extension startup - checking for interrupted backup process');
+  // Initialize auto backup if enabled
+  initializeAutoBackup();
+  // Restore backup state from storage
+  restoreBackupState();
   // You could add logic here to resume interrupted backups if needed
 });
 
-chrome.runtime.onSuspend.addListener(() => {
-  console.log('Service worker suspending - backup process will continue');
-  // The backup process will continue running
+// Handle extension install/enable
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('Extension installed/enabled - initializing auto backup');
+  // Initialize auto backup if enabled
+  initializeAutoBackup();
+  // Restore backup state from storage
+  restoreBackupState();
+});
+
+chrome.runtime.onSuspend.addListener(async () => {
+  console.log(
+    'Service worker suspending - saving backup state and cleaning up',
+  );
+
+  // Clear polling alarm on suspend (includes browser quit scenarios)
+  try {
+    clearPollingAlarm();
+    console.log('Cleared polling alarm on suspend');
+  } catch (error) {
+    console.error('Error clearing polling alarm on suspend:', error);
+  }
+
+  // Save backup state to storage when suspending (if backup is in progress)
+  if (isBackupProcessing && currentBackupStartTime) {
+    try {
+      // Get the token from storage to preserve it
+      const result = await chrome.storage.local.get(['backupToken']);
+      await chrome.storage.local.set({
+        backupProcessing: isBackupProcessing,
+        backupStartTime: currentBackupStartTime,
+        backupToken: result.backupToken, // Preserve the token
+      });
+    } catch (error) {
+      console.error('Error saving backup state on suspend:', error);
+    }
+  }
 });

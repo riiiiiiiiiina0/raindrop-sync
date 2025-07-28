@@ -23,6 +23,15 @@ document.addEventListener('DOMContentLoaded', function () {
   const lastImportTimeElement = /** @type {HTMLSpanElement} */ (
     document.getElementById('lastImportTime')
   );
+  const autoBackupCheckbox = /** @type {HTMLInputElement} */ (
+    document.getElementById('autoBackupEnabled')
+  );
+  const autoBackupStatusDiv = /** @type {HTMLDivElement} */ (
+    document.getElementById('autoBackupStatus')
+  );
+  const nextBackupTimeElement = /** @type {HTMLSpanElement} */ (
+    document.getElementById('nextBackupTime')
+  );
 
   // Check if all elements exist
   if (
@@ -33,7 +42,10 @@ document.addEventListener('DOMContentLoaded', function () {
     !backupButton ||
     !backupStatusDiv ||
     !lastBackupTimeElement ||
-    !lastImportTimeElement
+    !lastImportTimeElement ||
+    !autoBackupCheckbox ||
+    !autoBackupStatusDiv ||
+    !nextBackupTimeElement
   ) {
     console.error('Required elements not found');
     return;
@@ -44,6 +56,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Load saved timestamps when page loads
   loadTimestamps();
+
+  // Load auto backup settings when page loads
+  loadAutoBackupSettings();
+
+  // Load next backup time when page loads
+  loadNextBackupTime();
 
   // Check backup status when page loads
   checkBackupStatus();
@@ -56,6 +74,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Start backup process when backup button is clicked
   backupButton.addEventListener('click', startBackupProcess);
+
+  // Handle auto backup checkbox changes
+  autoBackupCheckbox.addEventListener('change', toggleAutoBackup);
 
   // Save token when Enter is pressed in the input field
   apiTokenInput.addEventListener('keypress', function (e) {
@@ -74,6 +95,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (request.type === 'success' && request.step === 'completed') {
         setTimeout(() => {
           loadTimestamps();
+          loadNextBackupTime(); // Also refresh next backup time
         }, 1000); // Small delay to ensure storage is updated
       }
     } else if (request.action === 'refreshTimestamps') {
@@ -127,6 +149,88 @@ document.addEventListener('DOMContentLoaded', function () {
   function formatTimestamp(timestamp) {
     const date = new Date(timestamp);
     return date.toLocaleString();
+  }
+
+  function loadAutoBackupSettings() {
+    chrome.storage.sync.get(['autoBackupEnabled'], function (result) {
+      autoBackupCheckbox.checked = result.autoBackupEnabled || false;
+      updateAutoBackupStatus();
+    });
+  }
+
+  async function loadNextBackupTime() {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'getNextBackupTime',
+      });
+
+      if (response && response.success && response.nextBackupTime) {
+        nextBackupTimeElement.textContent = formatTimestamp(
+          response.nextBackupTime,
+        );
+      } else {
+        nextBackupTimeElement.textContent = 'Not scheduled';
+      }
+    } catch (error) {
+      console.log('Could not get next backup time:', error);
+      nextBackupTimeElement.textContent = 'Not scheduled';
+    }
+  }
+
+  function toggleAutoBackup() {
+    const enabled = autoBackupCheckbox.checked;
+
+    chrome.storage.sync.set({ autoBackupEnabled: enabled }, function () {
+      if (chrome.runtime.lastError) {
+        showAutoBackupStatus(
+          'Error saving auto backup setting: ' +
+            chrome.runtime.lastError.message,
+          'error',
+        );
+      } else {
+        // Notify background script about the change
+        chrome.runtime.sendMessage({
+          action: 'updateAutoBackup',
+          enabled: enabled,
+        });
+
+        updateAutoBackupStatus();
+        showAutoBackupStatus(
+          enabled ? 'Auto backup enabled' : 'Auto backup disabled',
+          'success',
+        );
+
+        // Refresh the next backup time display
+        setTimeout(() => {
+          loadNextBackupTime();
+        }, 500);
+      }
+    });
+  }
+
+  function updateAutoBackupStatus() {
+    const enabled = autoBackupCheckbox.checked;
+    if (enabled) {
+      showAutoBackupStatus(
+        'Auto backup is enabled - backups will run every hour',
+        'info',
+      );
+    } else {
+      autoBackupStatusDiv.style.display = 'none';
+    }
+  }
+
+  function showAutoBackupStatus(message, type) {
+    autoBackupStatusDiv.textContent = message;
+    autoBackupStatusDiv.className = `auto-backup-status ${type}`;
+    autoBackupStatusDiv.style.display = 'block';
+
+    // Auto-hide success messages after 3 seconds
+    if (type === 'success') {
+      setTimeout(() => {
+        updateAutoBackupStatus();
+      }, 3000);
+    }
   }
 
   function saveToken() {
