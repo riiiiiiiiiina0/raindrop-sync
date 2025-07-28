@@ -456,7 +456,7 @@ async function createBackup(token) {
   }
 }
 
-// Check for recent backup (within 30 minutes)
+// Check for recent backup (within 1 hour)
 async function checkForRecentBackup(token) {
   try {
     const response = await fetch('https://api.raindrop.io/rest/v1/backups', {
@@ -469,12 +469,12 @@ async function checkForRecentBackup(token) {
 
     if (response.ok) {
       const data = await response.json();
-      const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+      const oneHourAgo = Date.now() - 1 * 60 * 60 * 1000; // 1 hour instead of 30 minutes
 
-      // Find the most recent backup within the last 30 minutes
+      // Find the most recent backup within the last 1 hour
       const recentBackup = data.items.find((backup) => {
         const backupTime = new Date(backup.created).getTime();
-        return backupTime > thirtyMinutesAgo;
+        return backupTime > oneHourAgo;
       });
 
       if (recentBackup) {
@@ -482,7 +482,7 @@ async function checkForRecentBackup(token) {
         return recentBackup;
       }
 
-      console.log('No backup found within the last 30 minutes');
+      console.log('No backup found within the last 1 hour');
       return null;
     } else {
       throw new Error(
@@ -591,6 +591,7 @@ async function downloadBackup(token, backup) {
   } catch (error) {
     console.error('Error downloading backup:', error);
     sendStatusUpdate(`Failed to download backup: ${error.message}`, 'error');
+    cleanupBackupProcess();
     return false;
   }
 }
@@ -642,7 +643,7 @@ async function startBackupProcess(token) {
     // Step 1: Show loading badge and status
     setBadge('⏳');
     sendStatusUpdate(
-      'Checking for existing backup within 30 minutes...',
+      'Checking for existing backup within 1 hour...',
       'info',
       'checking',
     );
@@ -661,13 +662,16 @@ async function startBackupProcess(token) {
       );
     }, timeout * 60 * 1000);
 
-    // Step 2: Check for recent backup (within 30 minutes)
+    // Step 2: Check for recent backup (within 1 hour)
     const recentBackup = await checkForRecentBackup(token);
 
     if (recentBackup) {
       // Recent backup found, download directly
+      const backupAge = Math.round(
+        (Date.now() - new Date(recentBackup.created).getTime()) / (1000 * 60),
+      );
       sendStatusUpdate(
-        'Recent backup found! Downloading...',
+        `Recent backup found (${backupAge} minutes old)! Downloading...`,
         'info',
         'downloading',
       );
@@ -686,12 +690,13 @@ async function startBackupProcess(token) {
         );
         return { success: true, message: 'Recent backup downloaded' };
       }
+      cleanupBackupProcess();
       return { success: false, message: 'Failed to download recent backup' };
     }
 
     // Step 3: No recent backup found, create new one
     sendStatusUpdate(
-      'No recent backup found. Creating new backup...',
+      'No recent backup found within 1 hour. Creating new backup...',
       'info',
       'creating',
     );

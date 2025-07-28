@@ -83,13 +83,6 @@ document.addEventListener('DOMContentLoaded', function () {
   // Handle backup frequency changes
   backupFrequencySelect.addEventListener('change', updateBackupFrequency);
 
-  // Save token when Enter is pressed in the input field
-  apiTokenInput.addEventListener('keypress', function (e) {
-    if (e.key === 'Enter') {
-      saveToken();
-    }
-  });
-
   // Listen for status updates from background script
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'statusUpdate') {
@@ -126,9 +119,9 @@ document.addEventListener('DOMContentLoaded', function () {
     chrome.storage.sync.get(['raindropToken'], async function (result) {
       if (result.raindropToken) {
         apiTokenInput.value = result.raindropToken;
-        await validateAndSaveToken(); // Validate the loaded token
+        updateControlsDisabledState(false);
       } else {
-        updateButtonDisabledState(true);
+        updateControlsDisabledState(true);
       }
     });
   }
@@ -265,12 +258,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const token = apiTokenInput.value.trim();
     if (!token) {
       showStatus('Please enter a token.', 'info');
-      updateButtonDisabledState(true);
+      updateControlsDisabledState(true);
       return;
     }
 
     showStatus('Validating token...', 'info');
-    updateButtonDisabledState(true); // Disable buttons during validation
+    updateControlsDisabledState(true); // Disable buttons during validation
 
     try {
       const response = await fetch('https://api.raindrop.io/rest/v1/user', {
@@ -290,17 +283,17 @@ document.addEventListener('DOMContentLoaded', function () {
           'success',
         );
         saveTokenAfterValidation(token);
-        updateButtonDisabledState(false); // Enable buttons after successful validation
+        updateControlsDisabledState(false); // Enable buttons after successful validation
       } else {
         showStatus(
           `Token is invalid: ${response.status} ${response.statusText}`,
           'error',
         );
-        updateButtonDisabledState(true); // Keep buttons disabled if validation fails
+        updateControlsDisabledState(true); // Keep buttons disabled if validation fails
       }
     } catch (error) {
       showStatus(`Validation error: ${error.message}`, 'error');
-      updateButtonDisabledState(true); // Keep buttons disabled on error
+      updateControlsDisabledState(true); // Keep buttons disabled on error
     }
   }
 
@@ -372,13 +365,15 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     } else {
       // Reset button to normal state
-      updateButtonDisabledState(false);
+      updateControlsDisabledState(false);
       backupButton.className = 'backup-button';
       backupButton.textContent = 'Create & Download Backup';
     }
   }
 
-  function updateButtonDisabledState(isDisabled) {
+  function updateControlsDisabledState(isDisabled) {
+    autoBackupCheckbox.disabled = isDisabled;
+    backupFrequencySelect.disabled = isDisabled;
     backupButton.disabled = isDisabled;
   }
 
