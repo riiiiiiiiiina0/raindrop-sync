@@ -99,6 +99,9 @@ document.addEventListener('DOMContentLoaded', function () {
     chrome.storage.sync.get(['raindropToken'], function (result) {
       if (result.raindropToken) {
         apiTokenInput.value = result.raindropToken;
+        updateButtonDisabledState(false);
+      } else {
+        updateButtonDisabledState(true);
       }
     });
   }
@@ -129,10 +132,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function saveToken() {
     const token = apiTokenInput.value.trim();
 
-    if (!token) {
-      showStatus('Please enter a token', 'error');
-      return;
-    }
+    updateButtonDisabledState(!token);
 
     chrome.storage.sync.set(
       {
@@ -244,10 +244,14 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     } else {
       // Reset button to normal state
-      backupButton.disabled = false;
+      updateButtonDisabledState(false);
       backupButton.className = 'backup-button';
       backupButton.textContent = 'Create & Download Backup';
     }
+  }
+
+  function updateButtonDisabledState(isDisabled) {
+    backupButton.disabled = isDisabled;
   }
 
   async function checkBackupStatus() {
