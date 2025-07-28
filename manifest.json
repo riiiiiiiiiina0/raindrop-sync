@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Raindrop Sync",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A Chrome extension that automatically exports your Raindrop.io bookmarks daily and syncs them to your browser bookmarks—no manual export required.",
   "permissions": [
     "bookmarks",
