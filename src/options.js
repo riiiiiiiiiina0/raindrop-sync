@@ -32,6 +32,9 @@ document.addEventListener('DOMContentLoaded', function () {
   const nextBackupTimeElement = /** @type {HTMLSpanElement} */ (
     document.getElementById('nextBackupTime')
   );
+  const backupFrequencySelect = /** @type {HTMLSelectElement} */ (
+    document.getElementById('backupFrequency')
+  );
 
   // Check if all elements exist
   if (
@@ -45,7 +48,8 @@ document.addEventListener('DOMContentLoaded', function () {
     !lastImportTimeElement ||
     !autoBackupCheckbox ||
     !autoBackupStatusDiv ||
-    !nextBackupTimeElement
+    !nextBackupTimeElement ||
+    !backupFrequencySelect
   ) {
     console.error('Required elements not found');
     return;
@@ -77,6 +81,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Handle auto backup checkbox changes
   autoBackupCheckbox.addEventListener('change', toggleAutoBackup);
+
+  // Handle backup frequency changes
+  backupFrequencySelect.addEventListener('change', updateBackupFrequency);
 
   // Save token when Enter is pressed in the input field
   apiTokenInput.addEventListener('keypress', function (e) {
@@ -152,10 +159,16 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function loadAutoBackupSettings() {
-    chrome.storage.sync.get(['autoBackupEnabled'], function (result) {
-      autoBackupCheckbox.checked = result.autoBackupEnabled || false;
-      updateAutoBackupStatus();
-    });
+    chrome.storage.sync.get(
+      ['autoBackupEnabled', 'backupFrequency'],
+      function (result) {
+        autoBackupCheckbox.checked = result.autoBackupEnabled || false;
+        updateAutoBackupStatus();
+        if (result.backupFrequency) {
+          backupFrequencySelect.value = result.backupFrequency;
+        }
+      },
+    );
   }
 
   async function loadNextBackupTime() {
@@ -179,40 +192,57 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function toggleAutoBackup() {
     const enabled = autoBackupCheckbox.checked;
+    const frequency = backupFrequencySelect.value;
 
-    chrome.storage.sync.set({ autoBackupEnabled: enabled }, function () {
-      if (chrome.runtime.lastError) {
-        showAutoBackupStatus(
-          'Error saving auto backup setting: ' +
-            chrome.runtime.lastError.message,
-          'error',
-        );
-      } else {
-        // Notify background script about the change
-        chrome.runtime.sendMessage({
-          action: 'updateAutoBackup',
-          enabled: enabled,
-        });
+    chrome.storage.sync.set(
+      {
+        autoBackupEnabled: enabled,
+        backupFrequency: frequency,
+      },
+      function () {
+        if (chrome.runtime.lastError) {
+          showAutoBackupStatus(
+            'Error saving auto backup setting: ' +
+              chrome.runtime.lastError.message,
+            'error',
+          );
+        } else {
+          // Notify background script about the change
+          chrome.runtime.sendMessage({
+            action: 'updateAutoBackup',
+            enabled: enabled,
+            frequency: frequency,
+          });
 
-        updateAutoBackupStatus();
-        showAutoBackupStatus(
-          enabled ? 'Auto backup enabled' : 'Auto backup disabled',
-          'success',
-        );
+          updateAutoBackupStatus();
+          showAutoBackupStatus(
+            enabled
+              ? `Auto backup enabled (${getFrequencyText(frequency)})`
+              : 'Auto backup disabled',
+            'success',
+          );
 
-        // Refresh the next backup time display
-        setTimeout(() => {
-          loadNextBackupTime();
-        }, 500);
-      }
-    });
+          // Refresh the next backup time display
+          setTimeout(() => {
+            loadNextBackupTime();
+          }, 500);
+        }
+      },
+    );
   }
 
   function updateAutoBackupStatus() {
     const enabled = autoBackupCheckbox.checked;
+
+    // Enable/disable frequency selector based on auto backup state
+    backupFrequencySelect.disabled = !enabled;
+
     if (enabled) {
+      const frequency = backupFrequencySelect.value;
       showAutoBackupStatus(
-        'Auto backup is enabled - backups will run every hour',
+        `Auto backup is enabled - backups will run ${getFrequencyText(
+          frequency,
+        )}`,
         'info',
       );
     } else {
@@ -393,6 +423,53 @@ document.addEventListener('DOMContentLoaded', function () {
     } catch (error) {
       console.error('Error starting backup process:', error);
       showBackupStatus(`Error starting backup: ${error.message}`, 'error');
+    }
+  }
+
+  function updateBackupFrequency() {
+    const frequency = backupFrequencySelect.value;
+    const enabled = autoBackupCheckbox.checked;
+
+    chrome.storage.sync.set({ backupFrequency: frequency }, function () {
+      if (chrome.runtime.lastError) {
+        showAutoBackupStatus(
+          'Error saving backup frequency: ' + chrome.runtime.lastError.message,
+          'error',
+        );
+      } else {
+        // Notify background script about the frequency change if auto backup is enabled
+        if (enabled) {
+          chrome.runtime.sendMessage({
+            action: 'updateAutoBackup',
+            enabled: enabled,
+            frequency: frequency,
+          });
+        }
+
+        updateAutoBackupStatus();
+        showAutoBackupStatus(
+          `Backup frequency set to ${getFrequencyText(frequency)}`,
+          'success',
+        );
+
+        // Refresh the next backup time display
+        setTimeout(() => {
+          loadNextBackupTime();
+        }, 500);
+      }
+    });
+  }
+
+  function getFrequencyText(frequency) {
+    switch (frequency) {
+      case 'hourly':
+        return 'every hour';
+      case 'daily':
+        return 'every day';
+      case 'weekly':
+        return 'every week';
+      default:
+        return 'every day';
     }
   }
 });

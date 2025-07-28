@@ -44,10 +44,18 @@
           <div class="form-group">
             <label for="autoBackupEnabled" class="checkbox-label">
               <input type="checkbox" id="autoBackupEnabled">
-              Enable automatic backup every hour
+              Enable automatic backup
             </label>
+          </div>
+          <div class="form-group">
+            <label for="backupFrequency">Backup Frequency:</label>
+            <select id="backupFrequency" class="frequency-select">
+              <option value="hourly">Every Hour</option>
+              <option value="daily" selected>Every Day (Default)</option>
+              <option value="weekly">Every Week</option>
+            </select>
             <div class="help-text">
-              <p>When enabled, backups will be automatically created and downloaded every hour.</p>
+              <p>Choose how often automatic backups should be created and downloaded.</p>
             </div>
           </div>
           <div id="autoBackupStatus" class="auto-backup-status"></div>

@@ -67,6 +67,30 @@ input[type='password']:focus {
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
+.frequency-select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e1e5e9;
+  border-radius: 6px;
+  font-size: 16px;
+  transition: border-color 0.3s ease;
+  box-sizing: border-box;
+  background: white;
+  cursor: pointer;
+}
+
+.frequency-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.frequency-select:disabled {
+  background: #f7fafc;
+  color: #a0aec0;
+  cursor: not-allowed;
+}
+
 .help-text {
   margin-top: 8px;
   font-size: 14px;

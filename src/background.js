@@ -793,14 +793,33 @@ async function handleBackupPolling() {
 }
 
 // Auto backup management
-async function setupAutoBackup(enabled) {
+async function setupAutoBackup(enabled, frequency = 'daily') {
   if (enabled) {
-    // Create alarm to trigger every hour
+    // Calculate delay and period based on frequency
+    let delayInMinutes, periodInMinutes;
+
+    switch (frequency) {
+      case 'hourly':
+        delayInMinutes = 60; // Start in 1 hour
+        periodInMinutes = 60; // Repeat every hour
+        break;
+      case 'weekly':
+        delayInMinutes = 7 * 24 * 60; // Start in 1 week
+        periodInMinutes = 7 * 24 * 60; // Repeat every week
+        break;
+      case 'daily':
+      default:
+        delayInMinutes = 24 * 60; // Start in 1 day
+        periodInMinutes = 24 * 60; // Repeat every day
+        break;
+    }
+
+    // Create alarm with calculated intervals
     chrome.alarms.create('autoBackup', {
-      delayInMinutes: 60, // Start in 1 hour
-      periodInMinutes: 60, // Repeat every hour
+      delayInMinutes: delayInMinutes,
+      periodInMinutes: periodInMinutes,
     });
-    console.log('Auto backup alarm created - will trigger every hour');
+    console.log(`Auto backup alarm created - will trigger ${frequency}`);
   } else {
     // Clear the alarm
     chrome.alarms.clear('autoBackup');
@@ -837,10 +856,16 @@ async function getNextBackupTime(callback) {
 // Initialize auto backup on extension startup
 async function initializeAutoBackup() {
   try {
-    const result = await chrome.storage.sync.get(['autoBackupEnabled']);
+    const result = await chrome.storage.sync.get([
+      'autoBackupEnabled',
+      'backupFrequency',
+    ]);
     if (result.autoBackupEnabled) {
-      setupAutoBackup(true);
-      console.log('Auto backup initialized on startup');
+      const frequency = result.backupFrequency || 'daily';
+      setupAutoBackup(true, frequency);
+      console.log(
+        `Auto backup initialized on startup with frequency: ${frequency}`,
+      );
     }
   } catch (error) {
     console.error('Error initializing auto backup:', error);
@@ -904,7 +929,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'updateAutoBackup') {
-    setupAutoBackup(request.enabled);
+    const frequency = request.frequency || 'daily';
+    setupAutoBackup(request.enabled, frequency);
     sendResponse({ success: true });
     return true;
   }
