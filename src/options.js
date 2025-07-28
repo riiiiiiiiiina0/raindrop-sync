@@ -462,6 +462,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function getFrequencyText(frequency) {
     switch (frequency) {
+      case '10min':
+        return 'every 10 minutes';
       case 'hourly':
         return 'every hour';
       case 'daily':

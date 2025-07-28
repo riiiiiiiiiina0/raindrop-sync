@@ -819,6 +819,9 @@ async function setupAutoBackup(
         // Calculate period based on frequency for future alarms
         let periodInMinutes;
         switch (frequency) {
+          case '10min':
+            periodInMinutes = 10;
+            break;
           case 'hourly':
             periodInMinutes = 60;
             break;
@@ -848,6 +851,10 @@ async function setupAutoBackup(
     let delayInMinutes, periodInMinutes;
 
     switch (frequency) {
+      case '10min':
+        delayInMinutes = 10; // Start in 10 minutes
+        periodInMinutes = 10; // Repeat every 10 minutes
+        break;
       case 'hourly':
         delayInMinutes = 60; // Start in 1 hour
         periodInMinutes = 60; // Repeat every hour
@@ -959,6 +966,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
       let nextIntervalMs;
       switch (frequency) {
+        case '10min':
+          nextIntervalMs = 10 * 60 * 1000; // 10 minutes
+          break;
         case 'hourly':
           nextIntervalMs = 60 * 60 * 1000; // 1 hour
           break;
