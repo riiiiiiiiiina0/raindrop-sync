@@ -1071,14 +1071,6 @@ chrome.runtime.onSuspend.addListener(async () => {
     'Service worker suspending - saving backup state and cleaning up',
   );
 
-  // Clear polling alarm on suspend (includes browser quit scenarios)
-  try {
-    clearPollingAlarm();
-    console.log('Cleared polling alarm on suspend');
-  } catch (error) {
-    console.error('Error clearing polling alarm on suspend:', error);
-  }
-
   // Save backup state to storage when suspending (if backup is in progress)
   if (isBackupProcessing && currentBackupStartTime) {
     try {
