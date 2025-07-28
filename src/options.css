@@ -1,24 +1,99 @@
+:root {
+  --background-color: #f5f5f5;
+  --container-background: white;
+  --text-color: #333;
+  --header-background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --header-text-color: white;
+  --input-border-color: #e1e5e9;
+  --input-focus-border-color: #667eea;
+  --button-primary-background: #667eea;
+  --button-primary-text: white;
+  --button-secondary-background: #f7fafc;
+  --button-secondary-text: #4a5568;
+  --button-secondary-border: #e2e8f0;
+  --link-color: #667eea;
+  --status-success-background: #f0fff4;
+  --status-success-text: #22543d;
+  --status-success-border: #c6f6d5;
+  --status-error-background: #fed7d7;
+  --status-error-text: #742a2a;
+  --status-error-border: #feb2b2;
+  --status-info-background: #ebf8ff;
+  --status-info-text: #2a4365;
+  --status-info-border: #bee3f8;
+  --backup-section-border: #e2e8f0;
+  --backup-title-color: #2d3748;
+  --backup-description-color: #666;
+  --backup-link-background: #f8faff;
+  --backup-link-border: #e2e8f0;
+  --timestamps-background: #f8fafc;
+  --timestamps-border: #e2e8f0;
+  --timestamp-label-color: #4a5568;
+  --timestamp-value-background: white;
+  --timestamp-value-border: #e2e8f0;
+  --backup-button-background: #38a169;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background-color: #1a202c;
+    --container-background: #2d3748;
+    --text-color: #e2e8f0;
+    --header-background: linear-gradient(135deg, #4c51bf 0%, #5a3275 100%);
+    --header-text-color: #e2e8f0;
+    --input-border-color: #4a5568;
+    --input-focus-border-color: #7f9cf5;
+    --button-primary-background: #7f9cf5;
+    --button-primary-text: #1a202c;
+    --button-secondary-background: #4a5568;
+    --button-secondary-text: #e2e8f0;
+    --button-secondary-border: #718096;
+    --link-color: #7f9cf5;
+    --status-success-background: #2f855a;
+    --status-success-text: #e2e8f0;
+    --status-success-border: #38a169;
+    --status-error-background: #9b2c2c;
+    --status-error-text: #e2e8f0;
+    --status-error-border: #c53030;
+    --status-info-background: #2b6cb0;
+    --status-info-text: #e2e8f0;
+    --status-info-border: #4299e1;
+    --backup-section-border: #4a5568;
+    --backup-title-color: #e2e8f0;
+    --backup-description-color: #a0aec0;
+    --backup-link-background: #4a5568;
+    --backup-link-border: #718096;
+    --timestamps-background: #1a202c;
+    --timestamps-border: #4a5568;
+    --timestamp-label-color: #a0aec0;
+    --timestamp-value-background: #2d3748;
+    --timestamp-value-border: #4a5568;
+    --backup-button-background: #2f855a;
+  }
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
     Ubuntu, Cantarell, sans-serif;
   margin: 0;
   padding: 20px;
-  background-color: #f5f5f5;
+  background-color: var(--background-color);
+  color: var(--text-color);
   line-height: 1.6;
 }
 
 .container {
   max-width: 600px;
   margin: 0 auto;
-  background: white;
+  background: var(--container-background);
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   overflow: hidden;
 }
 
 header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+  background: var(--header-background);
+  color: var(--header-text-color);
   padding: 30px;
   text-align: center;
 }
@@ -57,41 +132,44 @@ label {
   display: block;
   margin-bottom: 8px;
   font-weight: 600;
-  color: #333;
+  color: var(--text-color);
   font-size: 14px;
 }
 
 input[type='password'] {
   width: 100%;
   padding: 12px 16px;
-  border: 2px solid #e1e5e9;
+  border: 2px solid var(--input-border-color);
   border-radius: 6px;
   font-size: 16px;
   transition: border-color 0.3s ease;
   box-sizing: border-box;
+  background-color: var(--container-background);
+  color: var(--text-color);
 }
 
 input[type='password']:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--input-focus-border-color);
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
 .frequency-select {
   width: 100%;
   padding: 12px 16px;
-  border: 2px solid #e1e5e9;
+  border: 2px solid var(--input-border-color);
   border-radius: 6px;
   font-size: 16px;
   transition: border-color 0.3s ease;
   box-sizing: border-box;
-  background: white;
+  background: var(--container-background);
+  color: var(--text-color);
   cursor: pointer;
 }
 
 .frequency-select:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--input-focus-border-color);
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
@@ -104,11 +182,11 @@ input[type='password']:focus {
 .help-text {
   margin-top: 8px;
   font-size: 14px;
-  color: #666;
+  color: var(--backup-description-color);
 }
 
 .help-text a {
-  color: #667eea;
+  color: var(--link-color);
   text-decoration: none;
 }
 
@@ -133,8 +211,8 @@ button {
 }
 
 #saveButton {
-  background: #667eea;
-  color: white;
+  background: var(--button-primary-background);
+  color: var(--button-primary-text);
   flex: 1;
 }
 
@@ -144,9 +222,9 @@ button {
 }
 
 #testButton {
-  background: #f7fafc;
-  color: #4a5568;
-  border: 2px solid #e2e8f0;
+  background: var(--button-secondary-background);
+  color: var(--button-secondary-text);
+  border: 2px solid var(--button-secondary-border);
   flex: 1;
 }
 
@@ -164,42 +242,42 @@ button {
 }
 
 .status.success {
-  background: #f0fff4;
-  color: #22543d;
-  border: 1px solid #c6f6d5;
+  background: var(--status-success-background);
+  color: var(--status-success-text);
+  border: 1px solid var(--status-success-border);
   display: block;
 }
 
 .status.error {
-  background: #fed7d7;
-  color: #742a2a;
-  border: 1px solid #feb2b2;
+  background: var(--status-error-background);
+  color: var(--status-error-text);
+  border: 1px solid var(--status-error-border);
   display: block;
 }
 
 .status.info {
-  background: #ebf8ff;
-  color: #2a4365;
-  border: 1px solid #bee3f8;
+  background: var(--status-info-background);
+  color: var(--status-info-text);
+  border: 1px solid var(--status-info-border);
   display: block;
 }
 
 .backup-section {
   margin-top: 40px;
   padding-top: 30px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--backup-section-border);
 }
 
 .backup-section h3 {
   margin: 0 0 8px 0;
   font-size: 20px;
   font-weight: 600;
-  color: #2d3748;
+  color: var(--backup-title-color);
 }
 
 .backup-description {
   margin: 0 0 12px 0;
-  color: #666;
+  color: var(--backup-description-color);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -211,27 +289,27 @@ button {
 .backup-link {
   display: inline-flex;
   align-items: center;
-  color: #667eea;
+  color: var(--link-color);
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
   padding: 8px 12px;
   border-radius: 6px;
-  background: #f8faff;
-  border: 1px solid #e2e8f0;
+  background: var(--backup-link-background);
+  border: 1px solid var(--backup-link-border);
   transition: all 0.3s ease;
 }
 
 .backup-link:hover {
   background: #ebf4ff;
-  border-color: #667eea;
+  border-color: var(--link-color);
   transform: translateY(-1px);
   text-decoration: none;
 }
 
 .timestamps-section {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--timestamps-background);
+  border: 1px solid var(--timestamps-border);
   border-radius: 6px;
   padding: 16px;
   margin: 20px 0;
@@ -245,12 +323,12 @@ button {
 }
 
 .timestamp-row:not(:last-child) {
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--timestamps-border);
 }
 
 .timestamp-label {
   font-weight: 500;
-  color: #4a5568;
+  color: var(--timestamp-label-color);
   font-size: 14px;
 }
 
@@ -258,15 +336,15 @@ button {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier,
     monospace;
   font-size: 13px;
-  color: #2d3748;
-  background: white;
+  color: var(--text-color);
+  background: var(--timestamp-value-background);
   padding: 4px 8px;
   border-radius: 4px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--timestamp-value-border);
 }
 
 .backup-button {
-  background: #38a169;
+  background: var(--backup-button-background);
   color: white;
   width: 100%;
   position: relative;
@@ -304,8 +382,8 @@ button {
 .auto-backup-section {
   margin: 20px 0;
   padding: 20px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--timestamps-background);
+  border: 1px solid var(--timestamps-border);
   border-radius: 6px;
 }
 
@@ -313,7 +391,7 @@ button {
   margin: 0 0 15px 0;
   font-size: 16px;
   font-weight: 600;
-  color: #2d3748;
+  color: var(--backup-title-color);
 }
 
 .checkbox-label {
@@ -341,22 +419,22 @@ button {
 }
 
 .auto-backup-status.success {
-  background: #f0fff4;
-  color: #22543d;
-  border: 1px solid #c6f6d5;
+  background: var(--status-success-background);
+  color: var(--status-success-text);
+  border: 1px solid var(--status-success-border);
   display: block;
 }
 
 .auto-backup-status.error {
-  background: #fed7d7;
-  color: #742a2a;
-  border: 1px solid #feb2b2;
+  background: var(--status-error-background);
+  color: var(--status-error-text);
+  border: 1px solid var(--status-error-border);
   display: block;
 }
 
 .auto-backup-status.info {
-  background: #ebf8ff;
-  color: #2a4365;
-  border: 1px solid #bee3f8;
+  background: var(--status-info-background);
+  color: var(--status-info-text);
+  border: 1px solid var(--status-info-border);
   display: block;
 }
