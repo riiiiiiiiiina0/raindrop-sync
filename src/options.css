@@ -27,6 +27,16 @@ header h1 {
   margin: 0 0 10px 0;
   font-size: 28px;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.title-icon {
+  width: 32px;
+  height: 32px;
+  vertical-align: middle;
 }
 
 header p {
