@@ -8,100 +8,51 @@ A Chrome extension that **automatically syncs your [Raindrop.io](https://raindro
 
 ## ⭐ Key Features
 
-### 🔄 **Automatic Synchronization**
-
-- **Automatic sync**: Your Raindrop.io bookmarks automatically sync to Chrome every 15 minutes
-- **Intelligent sync**: Syncs only run when new bookmarks are detected, saving resources
-- **Manual backup**: Start an immediate sync whenever you need it
-
-### 🛡️ **Reliable & Robust**
-
-- **Background processing**: Syncs happen seamlessly in the background without interrupting your browsing
-- **Error recovery**: Smart timeout handling and backup process recovery
-- **Status notifications**: Real-time progress updates and completion notifications
-
-### 🔒 **Secure & Private**
-
-- **Local processing**: All bookmark data is handled locally on your device
-- **Secure API integration**: Uses your personal Raindrop.io API token
-- **Connection testing**: Verify your API token before syncing
-
-### 📁 **Smart Organization**
-
-- **Folder structure preservation**: Maintains your Raindrop.io collection organization in Chrome bookmarks
-- **Clean imports**: Automatically replaces old "Raindrop" folder with fresh bookmarks
-- **Metadata preservation**: Keeps bookmark titles, URLs, and folder hierarchy intact
+- **🔄 Automatic sync**: Your Raindrop.io bookmarks sync to Chrome every 15 minutes
+- **💾 Save tabs**: Click the extension icon to save current/highlighted tabs to both Raindrop and Chrome
+- **🎯 Configurable action**: Choose between saving tabs, triggering sync, or doing nothing
+- **🛡️ Background processing**: Syncs happen seamlessly without interrupting browsing
+- **📱 Real-time status**: Get notifications and visual feedback during sync
 
 ## 🚀 Quick Start
 
 1. **Install** the extension from the Chrome Web Store
-2. **Get your API token:**
-   - Visit [Raindrop.io Integrations](https://app.raindrop.io/settings/integrations)
-   - Create a **new integration**
-   - Copy the **test token**
+2. **Get your API token** from [Raindrop.io Integrations](https://app.raindrop.io/settings/integrations)
 3. **Configure** the extension:
-   - Open the extension options page
-   - Enter your API token
-   - Test the connection
-4. **Enjoy** automatic synchronization of your bookmarks!
+   - Open extension options
+   - Enter your API token and test connection
+   - Choose your preferred action button behavior
+4. **Done!** Your bookmarks will sync automatically
 
-## 💡 Perfect For
+## 🔧 Configuration
 
-- ✅ Users who want their Raindrop.io bookmarks available in Chrome
-- ✅ Anyone seeking automated bookmark backup solutions
-- ✅ Teams sharing bookmark collections across browsers
-- ✅ Power users managing large bookmark libraries
+### Action Button Behavior
 
-## 🛠️ Technical Details
+- **💾 Save tab(s) to Raindrop** (default) - Saves to both Raindrop and local bookmarks
+- **🔄 Trigger manual sync** - Imports your latest Raindrop bookmarks
+- **⚪ Do nothing** - Automatic sync only
 
-- **Chrome Manifest V3** for modern browser compatibility
-- **Service worker architecture** for efficient background processing
-- **Improved state management** that no longer requires persistent storage for the backup process
-- **Netscape bookmark format parsing** for reliable data import
-- **Comprehensive error handling** and user feedback
+### Settings
+
+- **Automatic sync**: Every 15 minutes when changes detected
+- **Manual sync**: Click button for immediate sync
+- **Notifications**: Toggle sync completion alerts
 
 ## 📋 Requirements
 
-- Chrome browser with extensions support
-- Valid [Raindrop.io](https://raindrop.io/) account
-- API token from Raindrop.io integrations page
+- Chrome browser
+- [Raindrop.io](https://raindrop.io/) account
+- API token from Raindrop integrations
 
-## 🔧 Configuration Options
+## 📝 Notes
 
-### Auto-Sync Settings
-
-- **Enable/disable** automatic synchronization
-- **Next backup time** display
-
-### Manual Controls
-
-- **Immediate sync** button for on-demand backups
-- **Connection testing** to verify API token
-- **Real-time status** updates during sync process
-
-## 🚨 Important Notes
-
-- The extension creates a "Raindrop" folder in your Chrome bookmarks
-- Each sync replaces the existing folder with fresh data
-- Backup process may take several minutes for large collections
-- Internet connection required for API communication
-
-## 🆘 Troubleshooting
-
-### Common Issues
-
-- **Token invalid**: Verify your API token in Raindrop.io settings
-- **Sync timeout**: Large collections may take up to 30 minutes
-- **Connection failed**: Check your internet connection and Raindrop.io status
-
-### Getting Help
-
-- Check the extension options page for status messages
-- Review Chrome's extension error logs
-- Ensure Raindrop.io service is accessible
+- Creates a "Raindrop" folder in Chrome bookmarks
+- Each sync replaces folder with fresh data
+- Saved tabs go to both Raindrop and local bookmarks
+- Large collections may take several minutes to sync
 
 ---
 
-**Transform your bookmark management experience with Raindrop Sync!**
+**Transform your bookmark management with Raindrop Sync!**
 
 _Made with ❤️ for the Raindrop.io community_
