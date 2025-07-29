@@ -249,34 +249,33 @@ function getCurrentLevel(line) {
  * @param {string} title - The title of the page.
  * @returns {Promise<Object>} The newly created raindrop.
  */
-export async function addRaindrop(token, url, title) {
+export async function addRaindrops(token, raindrops) {
   try {
-    const response = await fetch('https://api.raindrop.io/rest/v1/raindrop', {
+    const response = await fetch('https://api.raindrop.io/rest/v1/raindrops', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        link: url,
-        title: title,
+        items: raindrops,
       }),
     });
 
     if (response.ok) {
       const data = await response.json();
       if (data.result) {
-        return data.item;
+        return data.items;
       } else {
-        throw new Error(data.errorMessage || 'Failed to add raindrop');
+        throw new Error(data.errorMessage || 'Failed to add raindrops');
       }
     } else {
       throw new Error(
-        `Failed to add raindrop: ${response.status} ${response.statusText}`,
+        `Failed to add raindrops: ${response.status} ${response.statusText}`,
       );
     }
   } catch (error) {
-    console.error('Error adding raindrop:', error);
+    console.error('Error adding raindrops:', error);
     throw error;
   }
 }
