@@ -28,6 +28,9 @@ document.addEventListener('DOMContentLoaded', function () {
   const showNotificationsCheckbox = /** @type {HTMLInputElement} */ (
     document.getElementById('showNotifications')
   );
+  const actionButtonBehaviorSelect = /** @type {HTMLSelectElement} */ (
+    document.getElementById('actionButtonBehavior')
+  );
 
   // Check if all elements exist
   if (
@@ -38,7 +41,8 @@ document.addEventListener('DOMContentLoaded', function () {
     !backupStatusDiv ||
     !lastImportTimeElement ||
     !nextBackupTimeElement ||
-    !showNotificationsCheckbox
+    !showNotificationsCheckbox ||
+    !actionButtonBehaviorSelect
   ) {
     console.error('Required elements not found');
     return;
@@ -56,8 +60,17 @@ document.addEventListener('DOMContentLoaded', function () {
   // Load notification setting when page loads
   loadNotificationSetting();
 
+  // Load action button behavior setting when page loads
+  loadActionButtonBehavior();
+
   // Save notification setting when checkbox is changed
   showNotificationsCheckbox.addEventListener('change', saveNotificationSetting);
+
+  // Save action button behavior setting when select is changed
+  actionButtonBehaviorSelect.addEventListener(
+    'change',
+    saveActionButtonBehavior,
+  );
 
   // Check backup status when page loads
   checkBackupStatus();
@@ -311,6 +324,20 @@ document.addEventListener('DOMContentLoaded', function () {
   function saveNotificationSetting() {
     chrome.storage.sync.set({
       showNotifications: showNotificationsCheckbox.checked,
+    });
+  }
+
+  function loadActionButtonBehavior() {
+    chrome.storage.sync.get(['actionButtonBehavior'], function (result) {
+      if (result.actionButtonBehavior) {
+        actionButtonBehaviorSelect.value = result.actionButtonBehavior;
+      }
+    });
+  }
+
+  function saveActionButtonBehavior() {
+    chrome.storage.sync.set({
+      actionButtonBehavior: actionButtonBehaviorSelect.value,
     });
   }
 });
