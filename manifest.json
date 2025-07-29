@@ -4,6 +4,7 @@
   "version": "1.11.0",
   "description": "Automatically syncs your Raindrop.io bookmarks to Chrome daily—no manual export required.",
   "permissions": [
+    "tabs",
     "bookmarks",
     "storage",
     "notifications",

@@ -239,3 +239,44 @@ function getCurrentLevel(line) {
   const leadingSpaces = line.match(/^(\s*)/);
   return leadingSpaces ? Math.floor(leadingSpaces[1].length / 2) : 0;
 }
+
+/**
+ * Adds a new raindrop to the user's collection.
+ *
+ * @async
+ * @param {string} token - The API token for the Raindrop API.
+ * @param {string} url - The URL of the page to add.
+ * @param {string} title - The title of the page.
+ * @returns {Promise<Object>} The newly created raindrop.
+ */
+export async function addRaindrop(token, url, title) {
+  try {
+    const response = await fetch('https://api.raindrop.io/rest/v1/raindrop', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        link: url,
+        title: title,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.result) {
+        return data.item;
+      } else {
+        throw new Error(data.errorMessage || 'Failed to add raindrop');
+      }
+    } else {
+      throw new Error(
+        `Failed to add raindrop: ${response.status} ${response.statusText}`,
+      );
+    }
+  } catch (error) {
+    console.error('Error adding raindrop:', error);
+    throw error;
+  }
+}
