@@ -535,6 +535,7 @@ chrome.action.onClicked.addListener(async () => {
     const raindrops = tabs.map((tab) => ({
       link: tab.url,
       title: tab.title,
+      pleaseParse: {},
     }));
 
     await addRaindrops(token, raindrops);
