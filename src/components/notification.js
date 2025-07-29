@@ -6,14 +6,18 @@
  * @param {string} message - The message to display in the notification.
  */
 export function showNotification(title, message) {
-  try {
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: '../icons/icon-48x48.png',
-      title: title,
-      message: message,
-    });
-  } catch (error) {
-    console.error('Error showing notification:', error);
-  }
+  chrome.storage.sync.get(['showNotifications'], function (result) {
+    if (result.showNotifications !== false) {
+      try {
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: '../icons/icon-48x48.png',
+          title: title,
+          message: message,
+        });
+      } catch (error) {
+        console.error('Error showing notification:', error);
+      }
+    }
+  });
 }
