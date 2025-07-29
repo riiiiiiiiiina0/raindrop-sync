@@ -1,6 +1,6 @@
 # 💦 Raindrop Sync
 
-A Chrome extension that **automatically syncs your [Raindrop.io](https://raindrop.io/) bookmarks to Chrome daily**—no manual export required.
+A Chrome extension that **automatically syncs your [Raindrop.io](https://raindrop.io/) bookmarks to Chrome**—no manual export required.
 
 ![](./docs/poster.jpeg)
 
@@ -10,14 +10,13 @@ A Chrome extension that **automatically syncs your [Raindrop.io](https://raindro
 
 ### 🔄 **Automatic Synchronization**
 
-- **Daily auto-sync**: Your Raindrop.io bookmarks automatically sync to Chrome every day
-- **Flexible scheduling**: Choose from hourly, daily, or weekly backup frequencies
+- **Automatic sync**: Your Raindrop.io bookmarks automatically sync to Chrome every 15 minutes
+- **Intelligent sync**: Syncs only run when new bookmarks are detected, saving resources
 - **Manual backup**: Start an immediate sync whenever you need it
 
 ### 🛡️ **Reliable & Robust**
 
 - **Background processing**: Syncs happen seamlessly in the background without interrupting your browsing
-- **Persistent state**: Resumes interrupted backups automatically if your browser restarts
 - **Error recovery**: Smart timeout handling and backup process recovery
 - **Status notifications**: Real-time progress updates and completion notifications
 
@@ -44,7 +43,6 @@ A Chrome extension that **automatically syncs your [Raindrop.io](https://raindro
    - Open the extension options page
    - Enter your API token
    - Test the connection
-   - Configure auto-sync preferences (optional)
 4. **Enjoy** automatic synchronization of your bookmarks!
 
 ## 💡 Perfect For
@@ -58,9 +56,9 @@ A Chrome extension that **automatically syncs your [Raindrop.io](https://raindro
 
 - **Chrome Manifest V3** for modern browser compatibility
 - **Service worker architecture** for efficient background processing
+- **Improved state management** that no longer requires persistent storage for the backup process
 - **Netscape bookmark format parsing** for reliable data import
 - **Comprehensive error handling** and user feedback
-- **Persistent state management** across browser sessions
 
 ## 📋 Requirements
 
@@ -73,7 +71,6 @@ A Chrome extension that **automatically syncs your [Raindrop.io](https://raindro
 ### Auto-Sync Settings
 
 - **Enable/disable** automatic synchronization
-- **Frequency selection**: Hourly, daily, or weekly
 - **Next backup time** display
 
 ### Manual Controls
