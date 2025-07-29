@@ -4,6 +4,7 @@ import {
   parseRaindropBackup,
   getLatestRaindrop,
   exportAllRaindrops,
+  addRaindrops,
 } from './components/raindrop.js';
 import {
   deleteExistingRaindropFolder,
@@ -513,4 +514,62 @@ chrome.runtime.onSuspend.addListener(async () => {
 
   // Clean up any state since new approach doesn't need persistence
   cleanupBackupProcess();
+});
+
+chrome.action.onClicked.addListener(async () => {
+  const token = await new Promise((resolve) => {
+    chrome.storage.sync.get(['raindropToken'], (result) => {
+      resolve(result.raindropToken);
+    });
+  });
+
+  if (!token) {
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+
+  try {
+    await setBadge('⏳');
+
+    const tabs = await chrome.tabs.query({ highlighted: true, currentWindow: true });
+    const raindrops = tabs
+      .filter((tab) => tab.url && (tab.url.startsWith('http:') || tab.url.startsWith('https:')))
+      .map((tab) => ({
+        link: tab.url,
+        title: tab.title,
+        pleaseParse: {},
+      }));
+
+    await addRaindrops(token, raindrops);
+
+    const searchResults = await chrome.bookmarks.search({ title: 'Raindrop' });
+    let parentId = '1';
+    if (searchResults.length > 0) {
+      const raindropFolder = searchResults.find((bookmark) => !bookmark.url);
+      if (raindropFolder) {
+        parentId = raindropFolder.id;
+      }
+    } else {
+      const newFolder = await chrome.bookmarks.create({
+        parentId: '1',
+        title: 'Raindrop',
+      });
+      parentId = newFolder.id;
+    }
+
+    for (const tab of tabs) {
+      await chrome.bookmarks.create({
+        parentId,
+        title: tab.title,
+        url: tab.url,
+      });
+    }
+
+    await setBadge('✅');
+  } catch (error) {
+    console.error('Failed to add bookmark:', error);
+    await setBadge('😵‍💫');
+  } finally {
+    setTimeout(() => clearBadge(), 3000);
+  }
 });
