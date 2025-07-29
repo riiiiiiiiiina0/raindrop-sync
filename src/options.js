@@ -19,23 +19,11 @@ document.addEventListener('DOMContentLoaded', function () {
   const backupStatusDiv = /** @type {HTMLDivElement} */ (
     document.getElementById('backupStatus')
   );
-  const lastBackupTimeElement = /** @type {HTMLSpanElement} */ (
-    document.getElementById('lastBackupTime')
-  );
   const lastImportTimeElement = /** @type {HTMLSpanElement} */ (
     document.getElementById('lastImportTime')
   );
-  const autoBackupCheckbox = /** @type {HTMLInputElement} */ (
-    document.getElementById('autoBackupEnabled')
-  );
-  const autoBackupStatusDiv = /** @type {HTMLDivElement} */ (
-    document.getElementById('autoBackupStatus')
-  );
   const nextBackupTimeElement = /** @type {HTMLSpanElement} */ (
     document.getElementById('nextBackupTime')
-  );
-  const backupFrequencySelect = /** @type {HTMLSelectElement} */ (
-    document.getElementById('backupFrequency')
   );
 
   // Check if all elements exist
@@ -45,12 +33,8 @@ document.addEventListener('DOMContentLoaded', function () {
     !statusDiv ||
     !backupButton ||
     !backupStatusDiv ||
-    !lastBackupTimeElement ||
     !lastImportTimeElement ||
-    !autoBackupCheckbox ||
-    !autoBackupStatusDiv ||
-    !nextBackupTimeElement ||
-    !backupFrequencySelect
+    !nextBackupTimeElement
   ) {
     console.error('Required elements not found');
     return;
@@ -61,9 +45,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Load saved timestamps when page loads
   loadTimestamps();
-
-  // Load auto backup settings when page loads
-  loadAutoBackupSettings();
 
   // Load next backup time when page loads
   loadNextBackupTime();
@@ -76,12 +57,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Start backup process when backup button is clicked
   backupButton.addEventListener('click', startBackupProcess);
-
-  // Handle auto backup checkbox changes
-  autoBackupCheckbox.addEventListener('change', toggleAutoBackup);
-
-  // Handle backup frequency changes
-  backupFrequencySelect.addEventListener('change', updateBackupFrequency);
 
   // Listen for status updates from background script
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -98,11 +73,6 @@ document.addEventListener('DOMContentLoaded', function () {
       }
     } else if (request.action === 'refreshTimestamps') {
       // Handle direct timestamp refresh with provided values
-      if (request.lastBackupTime) {
-        lastBackupTimeElement.textContent = formatTimestamp(
-          request.lastBackupTime,
-        );
-      }
       if (request.lastImportTime) {
         lastImportTimeElement.textContent = formatTimestamp(
           request.lastImportTime,
@@ -128,13 +98,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function loadTimestamps() {
     chrome.storage.sync.get(
-      ['lastBackupTime', 'lastImportTime'],
+      ['lastProcessedRaindropDate', 'lastImportTime'],
       function (result) {
-        if (result.lastBackupTime) {
-          lastBackupTimeElement.textContent = formatTimestamp(
-            result.lastBackupTime,
-          );
-        }
         if (result.lastImportTime) {
           lastImportTimeElement.textContent = formatTimestamp(
             result.lastImportTime,
@@ -147,19 +112,6 @@ document.addEventListener('DOMContentLoaded', function () {
   function formatTimestamp(timestamp) {
     const date = new Date(timestamp);
     return date.toLocaleString();
-  }
-
-  function loadAutoBackupSettings() {
-    chrome.storage.sync.get(
-      ['autoBackupEnabled', 'backupFrequency'],
-      function (result) {
-        autoBackupCheckbox.checked = result.autoBackupEnabled || false;
-        updateAutoBackupStatus();
-        if (result.backupFrequency) {
-          backupFrequencySelect.value = result.backupFrequency;
-        }
-      },
-    );
   }
 
   async function loadNextBackupTime() {
@@ -178,79 +130,6 @@ document.addEventListener('DOMContentLoaded', function () {
     } catch (error) {
       console.log('Could not get next backup time:', error);
       nextBackupTimeElement.textContent = 'Not scheduled';
-    }
-  }
-
-  function toggleAutoBackup() {
-    const enabled = autoBackupCheckbox.checked;
-    const frequency = backupFrequencySelect.value;
-
-    chrome.storage.sync.set(
-      {
-        autoBackupEnabled: enabled,
-        backupFrequency: frequency,
-      },
-      function () {
-        if (chrome.runtime.lastError) {
-          showAutoBackupStatus(
-            'Error saving auto backup setting: ' +
-              chrome.runtime.lastError.message,
-            'error',
-          );
-        } else {
-          // Notify background script about the change
-          chrome.runtime.sendMessage({
-            action: 'updateAutoBackup',
-            enabled: enabled,
-            frequency: frequency,
-          });
-
-          updateAutoBackupStatus();
-          showAutoBackupStatus(
-            enabled
-              ? `Auto backup enabled (${getFrequencyText(frequency)})`
-              : 'Auto backup disabled',
-            'success',
-          );
-
-          // Refresh the next backup time display
-          setTimeout(() => {
-            loadNextBackupTime();
-          }, 500);
-        }
-      },
-    );
-  }
-
-  function updateAutoBackupStatus() {
-    const enabled = autoBackupCheckbox.checked;
-
-    // Enable/disable frequency selector based on auto backup state
-    backupFrequencySelect.disabled = !enabled;
-
-    if (enabled) {
-      const frequency = backupFrequencySelect.value;
-      showAutoBackupStatus(
-        `Auto backup is enabled - backups will run ${getFrequencyText(
-          frequency,
-        )}`,
-        'info',
-      );
-    } else {
-      autoBackupStatusDiv.style.display = 'none';
-    }
-  }
-
-  function showAutoBackupStatus(message, type) {
-    autoBackupStatusDiv.textContent = message;
-    autoBackupStatusDiv.className = `auto-backup-status ${type}`;
-    autoBackupStatusDiv.style.display = 'block';
-
-    // Auto-hide success messages after 3 seconds
-    if (type === 'success') {
-      setTimeout(() => {
-        updateAutoBackupStatus();
-      }, 3000);
     }
   }
 
@@ -367,13 +246,11 @@ document.addEventListener('DOMContentLoaded', function () {
       // Reset button to normal state
       updateControlsDisabledState(false);
       backupButton.className = 'backup-button';
-      backupButton.textContent = 'Create & Download Backup';
+      backupButton.textContent = 'Sync Raindrops Now';
     }
   }
 
   function updateControlsDisabledState(isDisabled) {
-    autoBackupCheckbox.disabled = isDisabled;
-    backupFrequencySelect.disabled = isDisabled;
     backupButton.disabled = isDisabled;
   }
 
@@ -412,55 +289,6 @@ document.addEventListener('DOMContentLoaded', function () {
     } catch (error) {
       console.error('Error starting backup process:', error);
       showBackupStatus(`Error starting backup: ${error.message}`, 'error');
-    }
-  }
-
-  function updateBackupFrequency() {
-    const frequency = backupFrequencySelect.value;
-    const enabled = autoBackupCheckbox.checked;
-
-    chrome.storage.sync.set({ backupFrequency: frequency }, function () {
-      if (chrome.runtime.lastError) {
-        showAutoBackupStatus(
-          'Error saving backup frequency: ' + chrome.runtime.lastError.message,
-          'error',
-        );
-      } else {
-        // Notify background script about the frequency change if auto backup is enabled
-        if (enabled) {
-          chrome.runtime.sendMessage({
-            action: 'updateAutoBackup',
-            enabled: enabled,
-            frequency: frequency,
-          });
-        }
-
-        updateAutoBackupStatus();
-        showAutoBackupStatus(
-          `Backup frequency set to ${getFrequencyText(frequency)}`,
-          'success',
-        );
-
-        // Refresh the next backup time display
-        setTimeout(() => {
-          loadNextBackupTime();
-        }, 500);
-      }
-    });
-  }
-
-  function getFrequencyText(frequency) {
-    switch (frequency) {
-      case '10min':
-        return 'every 10 minutes';
-      case 'hourly':
-        return 'every hour';
-      case 'daily':
-        return 'every day';
-      case 'weekly':
-        return 'every week';
-      default:
-        return 'every day';
     }
   }
 });

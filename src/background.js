@@ -1,3 +1,15 @@
+import { setBadge, clearBadge } from './components/actionButton.js';
+import { showNotification } from './components/notification.js';
+import {
+  parseRaindropBackup,
+  getLatestRaindrop,
+  exportAllRaindrops,
+} from './components/raindrop.js';
+import {
+  deleteExistingRaindropFolder,
+  createBookmarksFromStructure,
+} from './components/bookmarks.js';
+
 console.log('Raindrop Sync background service worker started');
 
 // Global state for backup process
@@ -5,71 +17,40 @@ let isBackupProcessing = false;
 let backupTimeoutId = null;
 let currentBackupStartTime = null;
 
-// Restore backup state from storage on startup
-async function restoreBackupState() {
+// Cleanup backup state from storage on startup
+async function cleanup() {
   try {
-    // First, clean up any stale polling alarms from previous sessions
+    // Clean up any stale polling alarms from previous sessions
     await cleanupStaleAlarms();
 
-    const result = await chrome.storage.local.get([
-      'backupProcessing',
-      'backupStartTime',
-      'backupToken',
-    ]);
-    if (
-      result.backupProcessing &&
-      result.backupStartTime &&
-      result.backupToken
-    ) {
-      isBackupProcessing = true;
-      currentBackupStartTime = result.backupStartTime;
+    // Clear any leftover backup state since new approach doesn't need persistence
+    await clearBackupState();
 
-      console.log(
-        'Restored backup state from storage - resuming backup process',
-      );
-
-      // Check if the backup has been running too long (over 30 minutes)
-      const timeElapsed = Date.now() - currentBackupStartTime;
-      if (timeElapsed > 30 * 60 * 1000) {
-        console.log('Backup process has been running too long, cleaning up');
-        cleanupBackupProcess();
-        return;
-      }
-
-      // Set badge to show backup is in progress
-      setBadge('⏳');
-      sendStatusUpdate('Resuming backup process...', 'info', 'polling');
-
-      // Create timeout for remaining time
-      const remainingTime = 30 * 60 * 1000 - timeElapsed;
-      backupTimeoutId = setTimeout(() => {
-        cleanupBackupProcess();
-        sendStatusUpdate('Backup process timed out after 30 minutes', 'error');
-        showNotification(
-          'Backup Failed',
-          'The backup process timed out after 30 minutes.',
-        );
-      }, remainingTime);
-
-      // Resume polling by setting up the alarm
-      setupPollingAlarm();
-    }
+    console.log('Backup state cleaned up on startup');
   } catch (error) {
-    console.error('Error restoring backup state:', error);
+    console.error('Error cleaning up backup state:', error);
   }
 }
 
-// Save backup state to storage
-async function saveBackupState(token) {
-  try {
-    await chrome.storage.local.set({
-      backupProcessing: isBackupProcessing,
-      backupStartTime: currentBackupStartTime,
-      backupToken: token,
-    });
-  } catch (error) {
-    console.error('Error saving backup state:', error);
+// Cleanup backup process
+function cleanupBackupProcess() {
+  isBackupProcessing = false;
+  currentBackupStartTime = null;
+
+  // Clear timeouts (still needed for potential future use)
+  if (backupTimeoutId) {
+    clearTimeout(backupTimeoutId);
+    backupTimeoutId = null;
   }
+
+  // Reset badge
+  clearBadge();
+
+  // Clear local storage state
+  clearBackupState();
+
+  // Send cleanup notification to options page
+  sendStatusUpdate('Process cleanup completed', 'info', 'cleanup');
 }
 
 // Clear backup state from storage
@@ -85,19 +66,6 @@ async function clearBackupState() {
   }
 }
 
-// Setup polling alarm instead of setInterval
-function setupPollingAlarm() {
-  chrome.alarms.create('backupPolling', {
-    delayInMinutes: 1, // Check in 1 minute
-    periodInMinutes: 1, // Check every minute
-  });
-}
-
-// Clear polling alarm
-function clearPollingAlarm() {
-  chrome.alarms.clear('backupPolling');
-}
-
 // Clean up stale alarms from previous sessions
 async function cleanupStaleAlarms() {
   try {
@@ -106,61 +74,6 @@ async function cleanupStaleAlarms() {
     console.log('Cleaned up stale polling alarms');
   } catch (error) {
     console.error('Error cleaning up stale alarms:', error);
-  }
-}
-
-// Badge management functions
-async function setBadge(text) {
-  try {
-    // Set badge globally (for new tabs)
-    chrome.action.setBadgeText({ text: text });
-
-    // Get all tabs and set badge for each
-    const tabs = await chrome.tabs.query({});
-    for (const tab of tabs) {
-      try {
-        chrome.action.setBadgeText({ text: text, tabId: tab.id });
-      } catch (tabError) {
-        // Some tabs might not allow badge setting, continue with others
-        console.warn(`Could not set badge for tab ${tab.id}:`, tabError);
-      }
-    }
-  } catch (error) {
-    console.error('Error setting badge:', error);
-  }
-}
-
-async function clearBadge() {
-  try {
-    // Clear badge globally (for new tabs)
-    chrome.action.setBadgeText({ text: '' });
-
-    // Get all tabs and clear badge for each
-    const tabs = await chrome.tabs.query({});
-    for (const tab of tabs) {
-      try {
-        chrome.action.setBadgeText({ text: '', tabId: tab.id });
-      } catch (tabError) {
-        // Some tabs might not allow badge clearing, continue with others
-        console.warn(`Could not clear badge for tab ${tab.id}:`, tabError);
-      }
-    }
-  } catch (error) {
-    console.error('Error clearing badge:', error);
-  }
-}
-
-// Notification function
-function showNotification(title, message) {
-  try {
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: '../icons/icon-48x48.png',
-      title: title,
-      message: message,
-    });
-  } catch (error) {
-    console.error('Error showing notification:', error);
   }
 }
 
@@ -183,189 +96,38 @@ function sendStatusUpdate(status, type, step) {
   }
 }
 
-// Parse Raindrop backup HTML and extract bookmark structure
-function parseRaindropBackup(htmlContent) {
+// Check if sync is needed by comparing latest raindrop date with last processed date
+async function checkIfSyncNeeded(token) {
   try {
-    // Parse the HTML content using text-based parsing since DOMParser is not available in service workers
-    const parsedStructure = parseNetscapeBookmarks(htmlContent);
+    // Get the latest raindrop
+    const latestRaindrop = await getLatestRaindrop(token);
+    const latestRaindropDate = new Date(latestRaindrop.created).getTime();
 
-    console.log('Parsed bookmark structure:', parsedStructure);
-    return parsedStructure;
+    // Get the last processed raindrop date from storage
+    const result = await chrome.storage.sync.get(['lastProcessedRaindropDate']);
+    const lastProcessedDate = result.lastProcessedRaindropDate || 0;
+
+    console.log(
+      'Latest raindrop date:',
+      new Date(latestRaindropDate).toISOString(),
+    );
+    console.log(
+      'Last processed date:',
+      new Date(lastProcessedDate).toISOString(),
+    );
+
+    // If latest raindrop is newer than last processed, sync is needed
+    const syncNeeded = latestRaindropDate > lastProcessedDate;
+
+    return {
+      syncNeeded,
+      latestRaindrop,
+      latestRaindropDate,
+      lastProcessedDate,
+    };
   } catch (error) {
-    console.error('Error parsing backup HTML:', error);
+    console.error('Error checking if sync is needed:', error);
     throw error;
-  }
-}
-
-// Parse Netscape bookmark format using text parsing
-function parseNetscapeBookmarks(htmlContent) {
-  const lines = htmlContent.split('\n');
-  const result = [];
-  const folderStack = [{ children: result, level: -1 }];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    // Check for folder start (H3 tag)
-    const folderMatch = line.match(/<H3[^>]*>(.*?)<\/H3>/i);
-    if (folderMatch) {
-      const folderTitle = decodeHtmlEntities(folderMatch[1]);
-
-      // Extract attributes from H3 tag
-      const addDateMatch = line.match(/ADD_DATE="(\d+)"/i);
-      const lastModifiedMatch = line.match(/LAST_MODIFIED="(\d+)"/i);
-
-      const folder = {
-        type: 'folder',
-        title: folderTitle,
-        addDate: addDateMatch ? parseInt(addDateMatch[1]) * 1000 : Date.now(),
-        lastModified: lastModifiedMatch
-          ? parseInt(lastModifiedMatch[1]) * 1000
-          : Date.now(),
-        children: [],
-      };
-
-      // Add to current parent
-      const currentParent = folderStack[folderStack.length - 1];
-      currentParent.children.push(folder);
-
-      // Push this folder to stack for future children
-      folderStack.push({
-        children: folder.children,
-        level: getCurrentLevel(line),
-      });
-      continue;
-    }
-
-    // Check for bookmark (A tag)
-    const bookmarkMatch = line.match(/<A[^>]*HREF="([^"]*)"[^>]*>(.*?)<\/A>/i);
-    if (bookmarkMatch) {
-      const url = decodeHtmlEntities(bookmarkMatch[1]);
-      const title = decodeHtmlEntities(bookmarkMatch[2]);
-
-      // Extract attributes
-      const addDateMatch = line.match(/ADD_DATE="(\d+)"/i);
-      const lastModifiedMatch = line.match(/LAST_MODIFIED="(\d+)"/i);
-      const tagsMatch = line.match(/TAGS="([^"]*)"/i);
-      const coverMatch = line.match(/DATA-COVER="([^"]*)"/i);
-      const importantMatch = line.match(/DATA-IMPORTANT="([^"]*)"/i);
-
-      // Check for description in next line (DD tag)
-      let description = '';
-      if (i + 1 < lines.length) {
-        const nextLine = lines[i + 1].trim();
-        const descMatch = nextLine.match(/<DD>(.*?)$/i);
-        if (descMatch) {
-          description = decodeHtmlEntities(descMatch[1]);
-        }
-      }
-
-      const bookmark = {
-        type: 'bookmark',
-        title: title,
-        url: url,
-        addDate: addDateMatch ? parseInt(addDateMatch[1]) * 1000 : Date.now(),
-        lastModified: lastModifiedMatch
-          ? parseInt(lastModifiedMatch[1]) * 1000
-          : Date.now(),
-        tags: tagsMatch ? tagsMatch[1] : '',
-        description: description,
-        cover: coverMatch ? coverMatch[1] : '',
-        important: importantMatch ? importantMatch[1] === 'true' : false,
-      };
-
-      // Add to current parent
-      const currentParent = folderStack[folderStack.length - 1];
-      currentParent.children.push(bookmark);
-      continue;
-    }
-
-    // Check for end of folder (</DL>)
-    if (line.match(/<\/DL>/i)) {
-      // Pop folder from stack if we're not at root level
-      if (folderStack.length > 1) {
-        folderStack.pop();
-      }
-    }
-  }
-
-  return result;
-}
-
-// Helper function to decode HTML entities
-function decodeHtmlEntities(text) {
-  const entities = {
-    '&amp;': '&',
-    '&lt;': '<',
-    '&gt;': '>',
-    '&quot;': '"',
-    '&#39;': "'",
-    '&nbsp;': ' ',
-  };
-
-  return text.replace(/&[a-zA-Z0-9#]+;/g, (match) => {
-    return entities[match] || match;
-  });
-}
-
-// Helper function to determine nesting level (not used in current implementation but kept for future use)
-function getCurrentLevel(line) {
-  const leadingSpaces = line.match(/^(\s*)/);
-  return leadingSpaces ? Math.floor(leadingSpaces[1].length / 2) : 0;
-}
-
-// Delete existing "Raindrop" folder from browser bookmarks
-async function deleteExistingRaindropFolder() {
-  try {
-    // Search for existing Raindrop folder
-    const searchResults = await chrome.bookmarks.search({ title: 'Raindrop' });
-
-    for (const bookmark of searchResults) {
-      // Check if this is a folder (no URL means it's a folder)
-      if (!bookmark.url) {
-        console.log(`Deleting existing Raindrop folder: ${bookmark.id}`);
-        await chrome.bookmarks.removeTree(bookmark.id);
-      }
-    }
-  } catch (error) {
-    console.error('Error deleting existing Raindrop folder:', error);
-    throw error;
-  }
-}
-
-// Create bookmarks from parsed structure
-async function createBookmarksFromStructure(parentId, bookmarkStructure) {
-  for (const item of bookmarkStructure) {
-    try {
-      if (item.type === 'folder') {
-        // Create folder
-        const folder = await chrome.bookmarks.create({
-          parentId: parentId,
-          title: item.title,
-        });
-
-        console.log(`Created folder: ${item.title}`);
-
-        // Recursively create children
-        if (item.children && item.children.length > 0) {
-          await createBookmarksFromStructure(folder.id, item.children);
-        }
-      } else if (item.type === 'bookmark') {
-        // Create bookmark
-        if (item.url) {
-          await chrome.bookmarks.create({
-            parentId: parentId,
-            title: item.title,
-            url: item.url,
-          });
-
-          console.log(`Created bookmark: ${item.title} -> ${item.url}`);
-        }
-      }
-    } catch (error) {
-      console.error(`Error creating ${item.type}: ${item.title}`, error);
-      // Continue with other items even if one fails
-    }
   }
 }
 
@@ -429,202 +191,11 @@ async function syncRaindropBookmarks(htmlContent) {
   }
 }
 
-// Backup creation function
-async function createBackup(token) {
-  try {
-    const response = await fetch('https://api.raindrop.io/rest/v1/backup', {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (response.ok) {
-      const result = await response.text();
-      console.log('Backup creation response:', result);
-      return true;
-    } else {
-      throw new Error(
-        `Failed to create backup: ${response.status} ${response.statusText}`,
-      );
-    }
-  } catch (error) {
-    console.error('Error creating backup:', error);
-    sendStatusUpdate(`Failed to create backup: ${error.message}`, 'error');
-    return false;
-  }
-}
-
-// Check for recent backup (within 1 hour)
-async function checkForRecentBackup(token) {
-  try {
-    const response = await fetch('https://api.raindrop.io/rest/v1/backups', {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      const oneHourAgo = Date.now() - 1 * 60 * 60 * 1000; // 1 hour instead of 30 minutes
-
-      // Find the most recent backup within the last 1 hour
-      const recentBackup = data.items.find((backup) => {
-        const backupTime = new Date(backup.created).getTime();
-        return backupTime > oneHourAgo;
-      });
-
-      if (recentBackup) {
-        console.log('Recent backup found:', recentBackup);
-        return recentBackup;
-      }
-
-      console.log('No backup found within the last 1 hour');
-      return null;
-    } else {
-      throw new Error(
-        `Failed to get backups: ${response.status} ${response.statusText}`,
-      );
-    }
-  } catch (error) {
-    console.error('Error checking for recent backup:', error);
-    throw error;
-  }
-}
-
-// Check for new backup after start time
-async function checkForNewBackup(token, startTime) {
-  try {
-    const response = await fetch('https://api.raindrop.io/rest/v1/backups', {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-
-      // Find backup created after we started the process
-      const newBackup = data.items.find((backup) => {
-        const backupTime = new Date(backup.created).getTime();
-        return backupTime > startTime;
-      });
-
-      if (newBackup) {
-        console.log('New backup found:', newBackup);
-        return newBackup;
-      }
-
-      console.log('No new backup found yet, continuing to poll...');
-      return null;
-    } else {
-      throw new Error(
-        `Failed to get backups: ${response.status} ${response.statusText}`,
-      );
-    }
-  } catch (error) {
-    console.error('Error checking for new backup:', error);
-    throw error;
-  }
-}
-
-// Download backup function
-async function downloadBackup(token, backup) {
-  try {
-    const backupId = backup._id;
-    console.log(`Attempting to download backup: ${backupId}`);
-
-    const response = await fetch(
-      `https://api.raindrop.io/rest/v1/backup/${backupId}.html`,
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-    );
-
-    if (response.ok) {
-      const htmlContent = await response.text();
-
-      // Print HTML content in console
-      console.log('=== RAINDROP BACKUP HTML CONTENT ===');
-      console.log(htmlContent);
-      console.log('=== END OF BACKUP CONTENT ===');
-
-      // Save the backup creation timestamp (actual creation time from Raindrop)
-      const backupCreationTime = new Date(backup.created).getTime();
-      await chrome.storage.sync.set({
-        lastBackupTime: backupCreationTime,
-      });
-
-      // Sync the downloaded backup with browser bookmarks
-      const syncSuccess = await syncRaindropBookmarks(htmlContent);
-      if (syncSuccess) {
-        // Get the actual import time that was saved during sync
-        const result = await chrome.storage.sync.get(['lastImportTime']);
-        const actualImportTime = result.lastImportTime || Date.now();
-
-        // Send a specific message to refresh timestamps immediately
-        try {
-          chrome.runtime.sendMessage({
-            action: 'refreshTimestamps',
-            lastBackupTime: backupCreationTime,
-            lastImportTime: actualImportTime,
-          });
-        } catch (error) {
-          console.log('Could not send refresh timestamps message:', error);
-        }
-      }
-
-      return syncSuccess;
-    } else {
-      throw new Error(
-        `Failed to download backup: ${response.status} ${response.statusText}`,
-      );
-    }
-  } catch (error) {
-    console.error('Error downloading backup:', error);
-    sendStatusUpdate(`Failed to download backup: ${error.message}`, 'error');
-    cleanupBackupProcess();
-    return false;
-  }
-}
-
-// Cleanup backup process
-function cleanupBackupProcess() {
-  isBackupProcessing = false;
-  currentBackupStartTime = null;
-
-  // Clear timeouts and intervals
-  if (backupTimeoutId) {
-    clearTimeout(backupTimeoutId);
-    backupTimeoutId = null;
-  }
-
-  // Clear polling alarm
-  clearPollingAlarm();
-
-  // Reset badge
-  clearBadge();
-
-  // Clear local storage state
-  clearBackupState();
-
-  // Send cleanup notification to options page
-  sendStatusUpdate('Process cleanup completed', 'info', 'cleanup');
-}
-
-// Main backup process function
+// Main backup process function - rewritten for new approach
 async function startBackupProcess(token) {
   // Prevent multiple concurrent backup processes
   if (isBackupProcessing) {
-    sendStatusUpdate('Backup is already in progress. Please wait...', 'info');
+    sendStatusUpdate('Sync is already in progress. Please wait...', 'info');
     return { success: false, message: 'Already in progress' };
   }
 
@@ -637,94 +208,87 @@ async function startBackupProcess(token) {
     isBackupProcessing = true;
     currentBackupStartTime = Date.now();
 
-    // Save backup state to storage
-    await saveBackupState(token);
-
     // Step 1: Show loading badge and status
     setBadge('⏳');
-    sendStatusUpdate(
-      'Checking for existing backup within 1 hour...',
-      'info',
-      'checking',
-    );
+    sendStatusUpdate('Checking for new raindrops...', 'info', 'checking');
 
-    // Set 30-minute timeout
-    const timeout = 30;
-    backupTimeoutId = setTimeout(() => {
+    // Step 2: Check if sync is needed
+    const syncCheck = await checkIfSyncNeeded(token);
+
+    if (!syncCheck.syncNeeded) {
+      // No new raindrops since last sync
       cleanupBackupProcess();
       sendStatusUpdate(
-        `Backup process timed out after ${timeout} minutes`,
-        'error',
+        'No new raindrops found since last sync. Your bookmarks are up to date!',
+        'success',
+        'completed',
+      );
+      return { success: true, message: 'No sync needed - already up to date' };
+    }
+
+    // Step 3: New raindrops found, export all raindrops
+    const raindropAge = Math.round(
+      (Date.now() - syncCheck.latestRaindropDate) / (1000 * 60),
+    );
+    sendStatusUpdate(
+      `New raindrops found! Latest added ${raindropAge} minutes ago. Exporting...`,
+      'info',
+      'exporting',
+    );
+
+    const htmlContent = await exportAllRaindrops(token);
+
+    // Step 4: Parse and import bookmarks
+    sendStatusUpdate(
+      'Importing raindrops to bookmarks...',
+      'info',
+      'importing',
+    );
+
+    const syncSuccess = await syncRaindropBookmarks(htmlContent);
+    if (syncSuccess) {
+      // Save the latest raindrop date as the last processed date
+      await chrome.storage.sync.set({
+        lastProcessedRaindropDate: syncCheck.latestRaindropDate,
+      });
+
+      // Get the actual import time that was saved during sync
+      const result = await chrome.storage.sync.get(['lastImportTime']);
+      const actualImportTime = result.lastImportTime || Date.now();
+
+      // Send a specific message to refresh timestamps immediately
+      try {
+        chrome.runtime.sendMessage({
+          action: 'refreshTimestamps',
+          lastBackupTime: syncCheck.latestRaindropDate,
+          lastImportTime: actualImportTime,
+        });
+      } catch (error) {
+        console.log('Could not send refresh timestamps message:', error);
+      }
+
+      cleanupBackupProcess();
+      sendStatusUpdate(
+        'Raindrops exported and imported successfully!',
+        'success',
+        'completed',
       );
       showNotification(
-        'Backup Failed',
-        `The backup process timed out after ${timeout} minutes.`,
+        'Raindrop Sync Complete',
+        'Your Raindrop.io bookmarks have been imported to browser bookmarks successfully.',
       );
-    }, timeout * 60 * 1000);
-
-    // Step 2: Check for recent backup (within 1 hour)
-    const recentBackup = await checkForRecentBackup(token);
-
-    if (recentBackup) {
-      // Recent backup found, download directly
-      const backupAge = Math.round(
-        (Date.now() - new Date(recentBackup.created).getTime()) / (1000 * 60),
-      );
-      sendStatusUpdate(
-        `Recent backup found (${backupAge} minutes old)! Downloading...`,
-        'info',
-        'downloading',
-      );
-
-      const success = await downloadBackup(token, recentBackup);
-      if (success) {
-        cleanupBackupProcess();
-        sendStatusUpdate(
-          'Recent backup downloaded successfully!',
-          'success',
-          'completed',
-        );
-        showNotification(
-          'Raindrop Sync Complete',
-          'Your recent Raindrop.io backup has been downloaded and imported to browser bookmarks successfully.',
-        );
-        return { success: true, message: 'Recent backup downloaded' };
-      }
+      return { success: true, message: 'Sync completed successfully' };
+    } else {
       cleanupBackupProcess();
-      return { success: false, message: 'Failed to download recent backup' };
+      return { success: false, message: 'Failed to import bookmarks' };
     }
-
-    // Step 3: No recent backup found, create new one
-    sendStatusUpdate(
-      'No recent backup found within 1 hour. Creating new backup...',
-      'info',
-      'creating',
-    );
-
-    const backupCreated = await createBackup(token);
-    if (!backupCreated) {
-      cleanupBackupProcess();
-      return { success: false, message: 'Failed to create backup' };
-    }
-
-    // Step 4: Start polling for backup completion
-    sendStatusUpdate(
-      'Backup creation initiated. Checking for completion...',
-      'info',
-      'polling',
-    );
-
-    // Set up polling alarm
-    setupPollingAlarm();
-
-    return { success: true, message: 'Backup process started' };
   } catch (error) {
-    console.error('Backup process error:', error);
+    console.error('Sync process error:', error);
     cleanupBackupProcess();
-    sendStatusUpdate(`Backup failed: ${error.message}`, 'error');
+    sendStatusUpdate(`Sync failed: ${error.message}`, 'error');
     showNotification(
       'Raindrop Sync Failed',
-      `Backup process failed: ${error.message}`,
+      `Sync process failed: ${error.message}`,
     );
     return { success: false, message: error.message };
   }
@@ -737,64 +301,6 @@ function startBackup(callback) {
     const response = await startBackupProcess(token);
     callback?.(response);
   });
-}
-
-// Handle backup polling alarm
-async function handleBackupPolling() {
-  try {
-    // Get backup state from storage
-    const result = await chrome.storage.local.get([
-      'backupProcessing',
-      'backupStartTime',
-      'backupToken',
-    ]);
-
-    if (
-      !result.backupProcessing ||
-      !result.backupStartTime ||
-      !result.backupToken
-    ) {
-      console.log('No backup in progress, clearing polling alarm');
-      clearPollingAlarm();
-      return;
-    }
-
-    const token = result.backupToken;
-    const startTime = result.backupStartTime;
-
-    console.log('Checking for new backup completion...');
-
-    const newBackup = await checkForNewBackup(token, startTime);
-    if (newBackup) {
-      // Stop polling and download the backup
-      clearPollingAlarm();
-      sendStatusUpdate(
-        'New backup found! Downloading...',
-        'info',
-        'downloading',
-      );
-
-      const success = await downloadBackup(token, newBackup);
-      if (success) {
-        // Complete the process
-        cleanupBackupProcess();
-        sendStatusUpdate(
-          'Backup created and downloaded successfully!',
-          'success',
-          'completed',
-        );
-        showNotification(
-          'Raindrop Sync Complete',
-          'Your Raindrop.io backup has been downloaded and imported to browser bookmarks successfully.',
-        );
-      }
-    }
-  } catch (error) {
-    console.error('Error during backup polling:', error);
-    clearPollingAlarm();
-    cleanupBackupProcess();
-    sendStatusUpdate(`Error checking backup status: ${error.message}`, 'error');
-  }
 }
 
 // Auto backup management
@@ -822,22 +328,7 @@ async function setupAutoBackup(
         );
 
         // Calculate period based on frequency for future alarms
-        let periodInMinutes;
-        switch (frequency) {
-          case '10min':
-            periodInMinutes = 10;
-            break;
-          case 'hourly':
-            periodInMinutes = 60;
-            break;
-          case 'weekly':
-            periodInMinutes = 7 * 24 * 60;
-            break;
-          case 'daily':
-          default:
-            periodInMinutes = 24 * 60;
-            break;
-        }
+        const periodInMinutes = 15;
 
         chrome.alarms.create('autoBackup', {
           delayInMinutes: delayInMinutes,
@@ -853,27 +344,8 @@ async function setupAutoBackup(
     }
 
     // Calculate delay and period based on frequency for new schedule
-    let delayInMinutes, periodInMinutes;
-
-    switch (frequency) {
-      case '10min':
-        delayInMinutes = 10; // Start in 10 minutes
-        periodInMinutes = 10; // Repeat every 10 minutes
-        break;
-      case 'hourly':
-        delayInMinutes = 60; // Start in 1 hour
-        periodInMinutes = 60; // Repeat every hour
-        break;
-      case 'weekly':
-        delayInMinutes = 7 * 24 * 60; // Start in 1 week
-        periodInMinutes = 7 * 24 * 60; // Repeat every week
-        break;
-      case 'daily':
-      default:
-        delayInMinutes = 24 * 60; // Start in 1 day
-        periodInMinutes = 24 * 60; // Repeat every day
-        break;
-    }
+    const delayInMinutes = 15,
+      periodInMinutes = 15;
 
     // Create alarm with calculated intervals
     chrome.alarms.create('autoBackup', {
@@ -901,15 +373,8 @@ async function setupAutoBackup(
 // Get next backup time
 async function getNextBackupTime(callback) {
   try {
-    // Check if auto backup is enabled
-    const result = await chrome.storage.sync.get([
-      'autoBackupEnabled',
-      'nextAutoBackupTime',
-    ]);
-    if (!result.autoBackupEnabled) {
-      callback({ success: false, message: 'Auto backup is disabled' });
-      return;
-    }
+    // Auto backup is always enabled, get the stored next backup time
+    const result = await chrome.storage.sync.get(['nextAutoBackupTime']);
 
     // First try to get the stored next backup time
     if (result.nextAutoBackupTime && result.nextAutoBackupTime > Date.now()) {
@@ -943,17 +408,9 @@ async function getNextBackupTime(callback) {
 // Initialize auto backup on extension startup
 async function initializeAutoBackup() {
   try {
-    const result = await chrome.storage.sync.get([
-      'autoBackupEnabled',
-      'backupFrequency',
-    ]);
-    if (result.autoBackupEnabled) {
-      const frequency = result.backupFrequency || 'daily';
-      setupAutoBackup(true, frequency);
-      console.log(
-        `Auto backup initialized on startup with frequency: ${frequency}`,
-      );
-    }
+    // Auto backup is always enabled with 15-minute frequency
+    setupAutoBackup(true, '15min');
+    console.log('Auto backup initialized on startup with frequency: 15min');
   } catch (error) {
     console.error('Error initializing auto backup:', error);
   }
@@ -966,27 +423,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
     // Update the stored next backup time for the next occurrence
     try {
-      const result = await chrome.storage.sync.get(['backupFrequency']);
-      const frequency = result.backupFrequency || 'daily';
-
-      let nextIntervalMs;
-      switch (frequency) {
-        case '10min':
-          nextIntervalMs = 10 * 60 * 1000; // 10 minutes
-          break;
-        case 'hourly':
-          nextIntervalMs = 60 * 60 * 1000; // 1 hour
-          break;
-        case 'weekly':
-          nextIntervalMs = 7 * 24 * 60 * 60 * 1000; // 1 week
-          break;
-        case 'daily':
-        default:
-          nextIntervalMs = 24 * 60 * 60 * 1000; // 1 day
-          break;
-      }
-
-      const nextBackupTime = Date.now() + nextIntervalMs;
+      const nextBackupTime = Date.now() + 15 * 60 * 1000; // 15 minutes
       await chrome.storage.sync.set({ nextAutoBackupTime: nextBackupTime });
       console.log(
         `Next auto backup scheduled for: ${new Date(
@@ -1008,16 +445,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       });
     } else {
       console.log('Auto backup skipped - backup already in progress');
-    }
-  } else if (alarm.name === 'backupPolling') {
-    console.log('Backup polling alarm triggered');
-
-    // Only proceed if we have a backup in progress
-    if (isBackupProcessing && currentBackupStartTime) {
-      handleBackupPolling();
-    } else {
-      // No backup in progress, clear the polling alarm
-      clearPollingAlarm();
     }
   }
 });
@@ -1049,9 +476,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'updateAutoBackup') {
-    const frequency = request.frequency || 'daily';
+    // Auto backup is always enabled with 15-minute frequency
     // When user updates settings, create a fresh schedule (don't preserve existing)
-    setupAutoBackup(request.enabled, frequency, false);
+    setupAutoBackup(true, '15min', false);
     sendResponse({ success: true });
     return true;
   }
@@ -1068,7 +495,7 @@ chrome.runtime.onStartup.addListener(() => {
   // Initialize auto backup if enabled
   initializeAutoBackup();
   // Restore backup state from storage
-  restoreBackupState();
+  cleanup();
   // You could add logic here to resume interrupted backups if needed
 });
 
@@ -1078,26 +505,12 @@ chrome.runtime.onInstalled.addListener(() => {
   // Initialize auto backup if enabled
   initializeAutoBackup();
   // Restore backup state from storage
-  restoreBackupState();
+  cleanup();
 });
 
 chrome.runtime.onSuspend.addListener(async () => {
-  console.log(
-    'Service worker suspending - saving backup state and cleaning up',
-  );
+  console.log('Service worker suspending - cleaning up');
 
-  // Save backup state to storage when suspending (if backup is in progress)
-  if (isBackupProcessing && currentBackupStartTime) {
-    try {
-      // Get the token from storage to preserve it
-      const result = await chrome.storage.local.get(['backupToken']);
-      await chrome.storage.local.set({
-        backupProcessing: isBackupProcessing,
-        backupStartTime: currentBackupStartTime,
-        backupToken: result.backupToken, // Preserve the token
-      });
-    } catch (error) {
-      console.error('Error saving backup state on suspend:', error);
-    }
-  }
+  // Clean up any state since new approach doesn't need persistence
+  cleanupBackupProcess();
 });

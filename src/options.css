@@ -70,6 +70,15 @@
     --timestamp-value-border: #4a5568;
     --backup-button-background: #2f855a;
   }
+
+  #verifyButton:hover:not(:disabled) {
+    background: #6b73ff;
+  }
+
+  #verifyButton:disabled {
+    background: #4a5568;
+    color: #a0aec0;
+  }
 }
 
 body {
@@ -233,12 +242,31 @@ button {
   border-color: #cbd5e0;
 }
 
+#verifyButton {
+  background: var(--button-primary-background);
+  color: var(--button-primary-text);
+  flex: 1;
+}
+
+#verifyButton:hover:not(:disabled) {
+  background: #5a67d8;
+  transform: translateY(-1px);
+}
+
+#verifyButton:disabled {
+  background: #a0aec0;
+  color: #68768a;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .status {
   padding: 12px 16px;
   border-radius: 6px;
   font-size: 14px;
   font-weight: 500;
   display: none;
+  margin-bottom: 10px;
 }
 
 .status.success {
@@ -268,7 +296,7 @@ button {
   border-top: 1px solid var(--backup-section-border);
 }
 
-.backup-section h3 {
+h3 {
   margin: 0 0 8px 0;
   font-size: 20px;
   font-weight: 600;
@@ -377,64 +405,4 @@ button {
   100% {
     box-shadow: 0 0 0 0 rgba(237, 137, 54, 0);
   }
-}
-
-.auto-backup-section {
-  margin: 20px 0;
-  padding: 20px;
-  background: var(--timestamps-background);
-  border: 1px solid var(--timestamps-border);
-  border-radius: 6px;
-}
-
-.auto-backup-section h4 {
-  margin: 0 0 15px 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--backup-title-color);
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  font-weight: 500;
-  cursor: pointer;
-  margin-bottom: 0;
-}
-
-.checkbox-label input[type='checkbox'] {
-  margin-right: 10px;
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-}
-
-.auto-backup-status {
-  margin-top: 10px;
-  padding: 8px 12px;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 500;
-  display: none;
-}
-
-.auto-backup-status.success {
-  background: var(--status-success-background);
-  color: var(--status-success-text);
-  border: 1px solid var(--status-success-border);
-  display: block;
-}
-
-.auto-backup-status.error {
-  background: var(--status-error-background);
-  color: var(--status-error-text);
-  border: 1px solid var(--status-error-border);
-  display: block;
-}
-
-.auto-backup-status.info {
-  background: var(--status-info-background);
-  color: var(--status-info-text);
-  border: 1px solid var(--status-info-border);
-  display: block;
 }
