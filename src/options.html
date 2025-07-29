@@ -48,18 +48,39 @@
         <div id="backupStatus" class="status"></div>
         <button id="backupButton" class="backup-button" disabled>Sync Raindrops Now</button>
       </div>
-    <div class="form-group">
-      <label for="showNotifications">Show notifications:</label>
-      <input type="checkbox" id="showNotifications" checked>
-    </div>
-    <div class="form-group">
-      <label for="actionButtonBehavior">Action Button Behavior:</label>
-      <select id="actionButtonBehavior">
-        <option value="save">Save tab(s) to Raindrop</option>
-        <option value="sync">Trigger manual sync</option>
-        <option value="none">Do nothing</option>
-      </select>
-    </div>
+
+      <div class="preferences-section">
+        <h3>Preferences</h3>
+
+        <div class="preference-group">
+          <div class="preference-item">
+            <div class="preference-main">
+              <label for="showNotifications" class="preference-label">Show Notifications</label>
+              <p class="preference-description">Get notified when bookmarks are synced</p>
+            </div>
+            <div class="toggle-container">
+              <input type="checkbox" id="showNotifications" class="toggle-input" checked>
+              <label for="showNotifications" class="toggle-switch"></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="preference-group">
+          <div class="preference-item">
+            <div class="preference-main">
+              <label for="actionButtonBehavior" class="preference-label">Action Button Behavior</label>
+              <p class="preference-description">Choose what happens when you click the extension icon</p>
+            </div>
+            <div class="select-container">
+              <select id="actionButtonBehavior" class="preference-select">
+                <option value="save">💾 Save tab(s) to Raindrop</option>
+                <option value="sync">🔄 Trigger manual sync</option>
+                <option value="none">⚪ Do nothing</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 
