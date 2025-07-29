@@ -532,11 +532,13 @@ chrome.action.onClicked.addListener(async () => {
     await setBadge('⏳');
 
     const tabs = await chrome.tabs.query({ highlighted: true, currentWindow: true });
-    const raindrops = tabs.map((tab) => ({
-      link: tab.url,
-      title: tab.title,
-      pleaseParse: {},
-    }));
+    const raindrops = tabs
+      .filter((tab) => tab.url && (tab.url.startsWith('http:') || tab.url.startsWith('https:')))
+      .map((tab) => ({
+        link: tab.url,
+        title: tab.title,
+        pleaseParse: {},
+      }));
 
     await addRaindrops(token, raindrops);
 
