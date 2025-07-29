@@ -25,6 +25,9 @@ document.addEventListener('DOMContentLoaded', function () {
   const nextBackupTimeElement = /** @type {HTMLSpanElement} */ (
     document.getElementById('nextBackupTime')
   );
+  const showNotificationsCheckbox = /** @type {HTMLInputElement} */ (
+    document.getElementById('showNotifications')
+  );
 
   // Check if all elements exist
   if (
@@ -34,7 +37,8 @@ document.addEventListener('DOMContentLoaded', function () {
     !backupButton ||
     !backupStatusDiv ||
     !lastImportTimeElement ||
-    !nextBackupTimeElement
+    !nextBackupTimeElement ||
+    !showNotificationsCheckbox
   ) {
     console.error('Required elements not found');
     return;
@@ -48,6 +52,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Load next backup time when page loads
   loadNextBackupTime();
+
+  // Load notification setting when page loads
+  loadNotificationSetting();
+
+  // Save notification setting when checkbox is changed
+  showNotificationsCheckbox.addEventListener('change', saveNotificationSetting);
 
   // Check backup status when page loads
   checkBackupStatus();
@@ -290,5 +300,17 @@ document.addEventListener('DOMContentLoaded', function () {
       console.error('Error starting backup process:', error);
       showBackupStatus(`Error starting backup: ${error.message}`, 'error');
     }
+  }
+
+  function loadNotificationSetting() {
+    chrome.storage.sync.get(['showNotifications'], function (result) {
+      showNotificationsCheckbox.checked = result.showNotifications !== false;
+    });
+  }
+
+  function saveNotificationSetting() {
+    chrome.storage.sync.set({
+      showNotifications: showNotificationsCheckbox.checked,
+    });
   }
 });
