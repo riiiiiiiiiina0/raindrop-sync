@@ -4,12 +4,13 @@
  *
  * @param {string} title - The title of the notification.
  * @param {string} message - The message to display in the notification.
+ * @param {string} notificationId - Optional ID for the notification.
  */
-export function showNotification(title, message) {
+export function showNotification(title, message, notificationId) {
   chrome.storage.sync.get(['showNotifications'], function (result) {
     if (result.showNotifications !== false) {
       try {
-        chrome.notifications.create({
+        chrome.notifications.create(notificationId, {
           type: 'basic',
           iconUrl: '../icons/icon-48x48.png',
           title: title,
