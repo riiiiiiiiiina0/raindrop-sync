@@ -97,6 +97,18 @@ export function parseRaindropBackup(htmlContent) {
     // Parse the HTML content using text-based parsing since DOMParser is not available in service workers
     const parsedStructure = parseNetscapeBookmarks(htmlContent);
 
+    // If the structure contains a single folder named "Export", use its children as the root
+    if (
+      parsedStructure.length === 1 &&
+      parsedStructure[0].type === 'folder' &&
+      parsedStructure[0].title === 'Export'
+    ) {
+      console.log(
+        'Detected "Export" folder, using its content as the root.',
+      );
+      return parsedStructure[0].children;
+    }
+
     console.log('Parsed bookmark structure:', parsedStructure);
     return parsedStructure;
   } catch (error) {
