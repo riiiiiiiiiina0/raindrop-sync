@@ -2,7 +2,7 @@ import { setBadge, clearBadge } from './components/actionButton.js';
 import { showNotification } from './components/notification.js';
 import {
   parseRaindropBackup,
-  getLatestRaindrop,
+  getLatestChange,
   exportAllRaindrops,
   addRaindrops,
 } from './components/raindrop.js';
@@ -97,34 +97,36 @@ function sendStatusUpdate(status, type, step) {
   }
 }
 
-// Check if sync is needed by comparing latest raindrop date with last processed date
+// Check if sync is needed by comparing the latest change date with the last processed date
 async function checkIfSyncNeeded(token) {
   try {
-    // Get the latest raindrop
-    const latestRaindrop = await getLatestRaindrop(token);
-    const latestRaindropDate = new Date(latestRaindrop.created).getTime();
+    // Get the timestamp of the latest change (updated, created, or deleted)
+    const latestChangeTimestamp = await getLatestChange(token);
 
-    // Get the last processed raindrop date from storage
-    const result = await chrome.storage.sync.get(['lastProcessedRaindropDate']);
-    const lastProcessedDate = result.lastProcessedRaindropDate || 0;
+    if (latestChangeTimestamp === null) {
+      // No raindrops found at all, so no sync is needed
+      return { syncNeeded: false };
+    }
+
+    // Get the last processed change date from storage
+    const result = await chrome.storage.sync.get(['lastProcessedChangeDate']);
+    const lastProcessedDate = result.lastProcessedChangeDate || 0;
 
     console.log(
-      'Latest raindrop date:',
-      new Date(latestRaindropDate).toISOString(),
+      'Latest change date from API:',
+      new Date(latestChangeTimestamp).toISOString(),
     );
     console.log(
-      'Last processed date:',
+      'Last processed date from storage:',
       new Date(lastProcessedDate).toISOString(),
     );
 
-    // If latest raindrop is newer than last processed, sync is needed
-    const syncNeeded = latestRaindropDate > lastProcessedDate;
+    // If the latest change is newer than the last processed date, a sync is needed
+    const syncNeeded = latestChangeTimestamp > lastProcessedDate;
 
     return {
       syncNeeded,
-      latestRaindrop,
-      latestRaindropDate,
-      lastProcessedDate,
+      latestChangeTimestamp,
     };
   } catch (error) {
     console.error('Error checking if sync is needed:', error);
@@ -211,28 +213,28 @@ async function startBackupProcess(token) {
 
     // Step 1: Show loading badge and status
     setBadge('⏳');
-    sendStatusUpdate('Checking for new raindrops...', 'info', 'checking');
+    sendStatusUpdate('Checking for new changes...', 'info', 'checking');
 
     // Step 2: Check if sync is needed
     const syncCheck = await checkIfSyncNeeded(token);
 
     if (!syncCheck.syncNeeded) {
-      // No new raindrops since last sync
+      // No new changes since last sync
       cleanupBackupProcess();
       sendStatusUpdate(
-        'No new raindrops found since last sync. Your bookmarks are up to date!',
+        'No new changes found since last sync. Your bookmarks are up to date!',
         'success',
         'completed',
       );
       return { success: true, message: 'No sync needed - already up to date' };
     }
 
-    // Step 3: New raindrops found, export all raindrops
-    const raindropAge = Math.round(
-      (Date.now() - syncCheck.latestRaindropDate) / (1000 * 60),
+    // Step 3: New changes found, export all raindrops
+    const changeAge = Math.round(
+      (Date.now() - syncCheck.latestChangeTimestamp) / (1000 * 60),
     );
     sendStatusUpdate(
-      `New raindrops found! Latest added ${raindropAge} minutes ago. Exporting...`,
+      `New changes found! Latest change was ${changeAge} minutes ago. Exporting...`,
       'info',
       'exporting',
     );
@@ -248,9 +250,9 @@ async function startBackupProcess(token) {
 
     const syncSuccess = await syncRaindropBookmarks(htmlContent);
     if (syncSuccess) {
-      // Save the latest raindrop date as the last processed date
+      // Save the latest change timestamp as the last processed date
       await chrome.storage.sync.set({
-        lastProcessedRaindropDate: syncCheck.latestRaindropDate,
+        lastProcessedChangeDate: syncCheck.latestChangeTimestamp,
       });
 
       // Get the actual import time that was saved during sync
@@ -261,7 +263,7 @@ async function startBackupProcess(token) {
       try {
         chrome.runtime.sendMessage({
           action: 'refreshTimestamps',
-          lastBackupTime: syncCheck.latestRaindropDate,
+          lastBackupTime: syncCheck.latestChangeTimestamp,
           lastImportTime: actualImportTime,
         });
       } catch (error) {
