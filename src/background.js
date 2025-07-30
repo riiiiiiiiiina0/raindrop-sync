@@ -133,12 +133,12 @@ async function checkIfSyncNeeded(token) {
 }
 
 // Main function to sync Raindrop backup with browser bookmarks
-async function syncRaindropBookmarks(htmlContent) {
+async function syncRaindropBookmarks(csvContent) {
   try {
     sendStatusUpdate('Parsing backup content...', 'info', 'parsing');
 
-    // Parse the backup HTML
-    const bookmarkStructure = parseRaindropBackup(htmlContent);
+    // Parse the backup CSV
+    const bookmarkStructure = parseRaindropBackup(csvContent);
 
     sendStatusUpdate(
       'Deleting existing Raindrop folder...',
@@ -237,7 +237,7 @@ async function startBackupProcess(token) {
       'exporting',
     );
 
-    const htmlContent = await exportAllRaindrops(token);
+    const csvContent = await exportAllRaindrops(token);
 
     // Step 4: Parse and import bookmarks
     sendStatusUpdate(
@@ -246,7 +246,7 @@ async function startBackupProcess(token) {
       'importing',
     );
 
-    const syncSuccess = await syncRaindropBookmarks(htmlContent);
+    const syncSuccess = await syncRaindropBookmarks(csvContent);
     if (syncSuccess) {
       // Save the latest raindrop date as the last processed date
       await chrome.storage.sync.set({
