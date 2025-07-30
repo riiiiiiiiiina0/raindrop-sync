@@ -1,44 +1,63 @@
 /**
- * Gets the latest raindrop to check if sync is needed.
- * This function fetches the latest raindrop from the Raindrop API.
+ * Gets the timestamp of the very last change (updated, created, or deleted).
+ * This function fetches the latest updated/created item and the latest deleted item
+ * from the Raindrop API and returns the most recent `lastUpdate` timestamp.
  *
  * @async
  * @param {string} token - The API token for the Raindrop API.
- * @returns {Promise<Object>} The latest raindrop.
+ * @returns {Promise<number|null>} The latest change timestamp (in milliseconds), or null if none found.
  */
-export async function getLatestRaindrop(token) {
+export async function getLatestChange(token) {
   try {
-    const response = await fetch(
-      'https://api.raindrop.io/rest/v1/raindrops/0?perpage=1',
-      {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+    const fetchOptions = {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
       },
+    };
+
+    const urls = [
+      'https://api.raindrop.io/rest/v1/raindrops/0?perpage=1&sort=-lastUpdate', // latest updated/created
+      'https://api.raindrop.io/rest/v1/raindrops/-99?perpage=1&sort=-lastUpdate', // latest deleted
+    ];
+
+    const promises = urls.map((url) =>
+      fetch(url, fetchOptions).then((res) => {
+        if (!res.ok) {
+          throw new Error(`API request failed: ${res.status} ${res.statusText}`);
+        }
+        return res.json();
+      }),
     );
 
-    if (response.ok) {
-      const data = await response.json();
+    const results = await Promise.all(promises);
+    let latestTimestamp = 0;
+
+    results.forEach((data) => {
       if (data.result && data.items && data.items.length > 0) {
-        const latestRaindrop = data.items[0];
-        console.log('Latest raindrop:', latestRaindrop);
-        return {
-          id: latestRaindrop._id,
-          created: latestRaindrop.created,
-          title: latestRaindrop.title,
-        };
-      } else {
-        throw new Error('No raindrops found');
+        const item = data.items[0];
+        if (item.lastUpdate) {
+          const timestamp = new Date(item.lastUpdate).getTime();
+          if (timestamp > latestTimestamp) {
+            latestTimestamp = timestamp;
+          }
+        }
       }
-    } else {
-      throw new Error(
-        `Failed to get latest raindrop: ${response.status} ${response.statusText}`,
-      );
+    });
+
+    if (latestTimestamp === 0) {
+      console.log('No raindrops found to determine last change.');
+      return null;
     }
+
+    console.log(
+      'Latest change detected at:',
+      new Date(latestTimestamp).toISOString(),
+    );
+    return latestTimestamp;
   } catch (error) {
-    console.error('Error getting latest raindrop:', error);
+    console.error('Error getting latest change:', error);
     throw error;
   }
 }
