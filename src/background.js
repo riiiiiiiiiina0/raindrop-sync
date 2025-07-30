@@ -279,6 +279,7 @@ async function startBackupProcess(token) {
       showNotification(
         'Raindrop Sync Complete',
         'Your Raindrop.io bookmarks have been imported to browser bookmarks successfully.',
+        'sync-complete',
       );
       return { success: true, message: 'Sync completed successfully' };
     } else {
@@ -449,6 +450,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     } else {
       console.log('Auto backup skipped - backup already in progress');
     }
+  }
+});
+
+// Notification click listener
+chrome.notifications.onClicked.addListener((notificationId) => {
+  if (notificationId === 'sync-complete') {
+    chrome.tabs.create({ url: 'chrome://bookmarks' });
   }
 });
 
