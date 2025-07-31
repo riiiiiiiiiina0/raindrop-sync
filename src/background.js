@@ -547,6 +547,9 @@ chrome.action.onClicked.addListener(async () => {
     case 'sync':
       startBackup();
       break;
+    case 'open_options':
+      chrome.runtime.openOptionsPage();
+      break;
     case 'none':
       break;
     default:
