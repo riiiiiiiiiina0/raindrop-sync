@@ -25,7 +25,9 @@ export async function getLatestChange(token) {
     const promises = urls.map((url) =>
       fetch(url, fetchOptions).then((res) => {
         if (!res.ok) {
-          throw new Error(`API request failed: ${res.status} ${res.statusText}`);
+          throw new Error(
+            `API request failed: ${res.status} ${res.statusText}`,
+          );
         }
         return res.json();
       }),
@@ -122,9 +124,7 @@ export function parseRaindropBackup(htmlContent) {
       parsedStructure[0].type === 'folder' &&
       parsedStructure[0].title === 'Export'
     ) {
-      console.log(
-        'Detected "Export" folder, using its content as the root.',
-      );
+      console.log('Detected "Export" folder, using its content as the root.');
       return parsedStructure[0].children;
     }
 
@@ -272,13 +272,12 @@ function getCurrentLevel(line) {
 }
 
 /**
- * Adds a new raindrop to the user's collection.
+ * Adds new raindrops to the user's collection.
  *
  * @async
  * @param {string} token - The API token for the Raindrop API.
- * @param {string} url - The URL of the page to add.
- * @param {string} title - The title of the page.
- * @returns {Promise<Object>} The newly created raindrop.
+ * @param {Array<Object>} raindrops - An array of raindrop objects to add.
+ * @returns {Promise<Array<Object>>} The newly created raindrops.
  */
 export async function addRaindrops(token, raindrops) {
   try {

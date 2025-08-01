@@ -189,6 +189,7 @@ async function syncRaindropBookmarks(htmlContent) {
     showNotification(
       'Raindrop Sync Failed',
       `Failed to import bookmarks to browser: ${error.message}`,
+      'sync-failed',
     );
     return false;
   }
@@ -231,7 +232,8 @@ async function startBackupProcess(token) {
 
     // Step 3: New changes found, export all raindrops
     const changeAge = Math.round(
-      (Date.now() - syncCheck.latestChangeTimestamp) / (1000 * 60),
+      (Date.now() - (syncCheck.latestChangeTimestamp || Date.now())) /
+        (1000 * 60),
     );
     sendStatusUpdate(
       `New changes found! Latest change was ${changeAge} minutes ago. Exporting...`,
@@ -293,6 +295,7 @@ async function startBackupProcess(token) {
     showNotification(
       'Raindrop Sync Failed',
       `Sync process failed: ${error.message}`,
+      'backup-failed',
     );
     return { success: false, message: error.message };
   }
@@ -579,7 +582,9 @@ chrome.action.onClicked.addListener(async () => {
         });
         let parentId = '1';
         if (searchResults.length > 0) {
-          const raindropFolder = searchResults.find((bookmark) => !bookmark.url);
+          const raindropFolder = searchResults.find(
+            (bookmark) => !bookmark.url,
+          );
           if (raindropFolder) {
             parentId = raindropFolder.id;
           }
