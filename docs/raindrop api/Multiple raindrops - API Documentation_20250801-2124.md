@@ -2,11 +2,17 @@
 
 **URL:** https://developer.raindrop.io/v1/raindrops/multiple
 
-**Extracted:** 2025-07-29T01:58:15.465Z
+**Extracted:** 2025-08-01T13:24:27.216Z
 
 ---
 
 <content>
+### 
+
+[](#common-parameters)
+
+Common parameters
+
 To filter, sort or limit raindrops use one of the parameters described below. Check each method for exact list of supported parameters.
 
 Parameter
@@ -83,13 +89,43 @@ nested
 
 Also include bookmarks from nested collections (true/false)
 
+## 
+
+[](#get-raindrops)
+
+Get raindrops
+
 `GET` `https://api.raindrop.io/rest/v1/raindrops/{collectionId}`
+
+#### 
+
+[](#path-parameters)
+
+Path Parameters
+
+Name
+
+Type
+
+Description
 
 collectionId\*
 
 number
 
 Collection ID. Specify 0 to get all raindrops
+
+#### 
+
+[](#query-parameters)
+
+Query Parameters
+
+Name
+
+Type
+
+Description
 
 sort
 
@@ -111,13 +147,43 @@ nested
 
 boolean
 
+200
+
+[](#tab-id-200)
+
+Copy
+
+## 
+
+[](#create-many-raindrops)
+
+Create many raindrops
+
 `POST` `https://api.raindrop.io/rest/v1/raindrops`
+
+#### 
+
+[](#request-body)
+
+Request Body
+
+Name
+
+Type
+
+Description
 
 items\*
 
 array
 
 Array of objects. Format of single object described in "Create single raindrop". Maximum 100 objects in array!
+
+200
+
+[](#tab-id-200-1)
+
+Copy
 
 ```
 {
@@ -130,9 +196,27 @@ Array of objects. Format of single object described in "Create single raindrop".
 }
 ```
 
+## 
+
+[](#update-many-raindrops)
+
+Update many raindrops
+
 `PUT` `https://api.raindrop.io/rest/v1/raindrops/{collectionId}`
 
 Specify optional `search` and/or `ids` parameters to limit raindrops that will be updated. Possible fields that could be updated are described in "Body Parameters"
+
+#### 
+
+[](#path-parameters-1)
+
+Path Parameters
+
+Name
+
+Type
+
+Description
 
 collectionId\*
 
@@ -141,6 +225,18 @@ number
 nested
 
 boolean
+
+#### 
+
+[](#request-body-1)
+
+Request Body
+
+Name
+
+Type
+
+Description
 
 ids
 
@@ -176,9 +272,33 @@ object
 
 Specify `{"$id": collectionId}` to move raindrops to other collection
 
+200
+
+[](#tab-id-200-2)
+
+Copy
+
+## 
+
+[](#remove-many-raindrops)
+
+Remove many raindrops
+
 `DELETE` `https://api.raindrop.io/rest/v1/raindrops/{collectionId}`
 
 Specify optional `search` and/or `ids` parameters to limit raindrops that will be moved to "**Trash**" When `:collectionId` is **\-99**, raindrops will be permanently removed!
+
+#### 
+
+[](#path-parameters-2)
+
+Path Parameters
+
+Name
+
+Type
+
+Description
 
 collectionId\*
 
@@ -188,13 +308,43 @@ nested
 
 boolean
 
+#### 
+
+[](#query-parameters-1)
+
+Query Parameters
+
+Name
+
+Type
+
+Description
+
 search
 
 string
 
+#### 
+
+[](#request-body-2)
+
+Request Body
+
+Name
+
+Type
+
+Description
+
 ids
 
 array
+
+200
+
+[](#tab-id-200-3)
+
+Copy
 
 ```
 {
@@ -203,9 +353,9 @@ array
 }
 ```
 
+[PreviousSingle raindrop](/v1/raindrops/single)[NextHighlights](/v1/highlights)
+
 Last updated 7 months ago
 
 Was this helpful?
-
-This site uses cookies to deliver its service and to analyze traffic. By browsing this site, you accept the [privacy policy](https://help.raindrop.io/privacy).
 </content>
