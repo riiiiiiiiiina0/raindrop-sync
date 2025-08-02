@@ -25,7 +25,9 @@ export async function getLatestChange(token) {
     const promises = urls.map((url) =>
       fetch(url, fetchOptions).then((res) => {
         if (!res.ok) {
-          throw new Error(`API request failed: ${res.status} ${res.statusText}`);
+          throw new Error(
+            `API request failed: ${res.status} ${res.statusText}`,
+          );
         }
         return res.json();
       }),
@@ -63,45 +65,243 @@ export async function getLatestChange(token) {
 }
 
 /**
- * Exports all raindrops as HTML directly.
- * This function fetches the HTML content of all raindrops from the Raindrop API.
+ * Fetches raindrops page by page using the Multiple raindrops API.
+ * This function fetches raindrops in paginated manner and processes each page immediately.
  *
  * @async
  * @param {string} token - The API token for the Raindrop API.
- * @returns {Promise<string>} The HTML content of all raindrops.
+ * @param {Function} onPageReceived - Callback function called for each page of raindrops.
+ * @param {Object} [options] - Fetch options.
+ * @param {number} [options.collectionId] - Collection ID (0 for all, -1 for unsorted, etc.)
+ * @param {number} [options.perPage] - Number of raindrops per page (max 50)
+ * @param {boolean} [options.nested] - Include raindrops from nested collections
+ * @param {string} [options.sort] - Sort order (-created, created, title, etc.)
+ * @returns {Promise<Object>} Summary of the fetch process.
  */
-export async function exportAllRaindrops(token) {
+export async function fetchRaindropsPaginated(token, onPageReceived, options) {
   try {
-    console.log('Exporting all raindrops as HTML...');
+    const defaultOptions = {
+      collectionId: 0, // 0 = all collections
+      perPage: 50,
+      nested: true,
+      sort: '-created',
+    };
+    const finalOptions = { ...defaultOptions, ...(options || {}) };
+    const { collectionId, perPage, nested, sort } = finalOptions;
 
-    const response = await fetch(
-      'https://api.raindrop.io/rest/v1/raindrops/0/export.html',
-      {
+    console.log(
+      `Fetching raindrops paginated from collection ${collectionId}...`,
+    );
+
+    let currentPage = 0;
+    let totalFetched = 0;
+    let hasMorePages = true;
+
+    while (hasMorePages) {
+      console.log(
+        `Fetching page ${currentPage} (${perPage} items per page)...`,
+      );
+
+      const url = new URL(
+        `https://api.raindrop.io/rest/v1/raindrops/${collectionId}`,
+      );
+      url.searchParams.set('page', currentPage.toString());
+      url.searchParams.set('perpage', perPage.toString());
+      url.searchParams.set('nested', nested.toString());
+      url.searchParams.set('sort', sort);
+
+      const response = await fetch(url.toString(), {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
-      },
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch raindrops page ${currentPage}: ${response.status} ${response.statusText}`,
+        );
+      }
+
+      const data = await response.json();
+
+      if (!data.result || !data.items) {
+        throw new Error(
+          data.errorMessage || `Failed to fetch raindrops page ${currentPage}`,
+        );
+      }
+
+      const raindrops = data.items;
+      console.log(
+        `Received ${raindrops.length} raindrops on page ${currentPage}`,
+      );
+
+      // Process this page of raindrops
+      if (raindrops.length > 0) {
+        await onPageReceived(raindrops, currentPage, totalFetched);
+        totalFetched += raindrops.length;
+      }
+
+      // Check if there are more pages
+      hasMorePages = raindrops.length === perPage;
+      currentPage++;
+
+      // Safety check to prevent infinite loops
+      if (currentPage > 1000) {
+        console.warn('Reached maximum page limit (1000), stopping fetch');
+        break;
+      }
+    }
+
+    console.log(
+      `Finished fetching raindrops. Total: ${totalFetched} raindrops from ${currentPage} pages`,
     );
 
-    if (response.ok) {
-      const htmlContent = await response.text();
-
-      // Print HTML content in console
-      console.log('=== RAINDROP EXPORT HTML CONTENT ===');
-      console.log(htmlContent);
-      console.log('=== END OF EXPORT CONTENT ===');
-
-      return htmlContent;
-    } else {
-      throw new Error(
-        `Failed to export raindrops: ${response.status} ${response.statusText}`,
-      );
-    }
+    return {
+      totalFetched,
+      totalPages: currentPage,
+      success: true,
+    };
   } catch (error) {
-    console.error('Error exporting raindrops:', error);
+    console.error('Error fetching raindrops paginated:', error);
     throw error;
   }
+}
+
+/**
+ * Creates a browser bookmark from a raindrop object.
+ * This function creates a bookmark in the appropriate folder based on the raindrop's collection ID.
+ * For collection handling:
+ * - Collection found: Creates bookmark in the corresponding folder
+ * - Collection -1: Creates bookmark in unsorted folder
+ * - Other missing collections: Ignores the bookmark (returns null)
+ *
+ * @async
+ * @param {Object} raindrop - The raindrop object from the API.
+ * @param {Map} collectionToFolderMap - Map of collection IDs to bookmark folder IDs.
+ * @returns {Promise<Object|null>} The created bookmark object, or null if bookmark is ignored.
+ */
+export async function createBookmarkFromRaindrop(
+  raindrop,
+  collectionToFolderMap,
+) {
+  try {
+    // Get the collection ID from the raindrop
+    const collectionId = raindrop.collection?.$id || 0; // Default to 0 (unsorted) if no collection
+
+    // Find the corresponding folder ID
+    let folderId = collectionToFolderMap.get(collectionId);
+
+    // Handle not found collections based on specific rules
+    if (!folderId) {
+      if (collectionId === -1) {
+        // -1: put to unsorted folder
+        folderId =
+          collectionToFolderMap.get('unsorted') || collectionToFolderMap.get(0);
+        if (!folderId) {
+          throw new Error(`No unsorted folder available for collection -1`);
+        }
+        console.log(`Collection -1 (unsorted) mapped to unsorted folder`);
+      } else {
+        // others: ignore that bookmark
+        console.warn(
+          `Collection ${collectionId} not found in folder map, ignoring bookmark: ${raindrop.title}`,
+        );
+        return null;
+      }
+    }
+
+    // Prepare bookmark title (truncate if too long)
+    let title = raindrop.title || 'Untitled';
+    if (title.length > 1000) {
+      title = title.substring(0, 997) + '...';
+    }
+
+    // Ensure we have a valid URL
+    const url = raindrop.link;
+    if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+      console.warn(
+        `Skipping raindrop with invalid URL: ${url} (title: ${title})`,
+      );
+      return null;
+    }
+
+    // Create the bookmark
+    const bookmark = await chrome.bookmarks.create({
+      parentId: folderId,
+      title: title,
+      url: url,
+    });
+
+    console.log(`Created bookmark: ${title} in collection ${collectionId}`);
+    return bookmark;
+  } catch (error) {
+    console.error('Error creating bookmark from raindrop:', error, raindrop);
+    return null;
+  }
+}
+
+/**
+ * Processes a page of raindrops and creates bookmarks for each one.
+ * This function is used as a callback for the paginated raindrop fetching.
+ *
+ * @async
+ * @param {Array} raindrops - Array of raindrop objects from the API.
+ * @param {Map} collectionToFolderMap - Map of collection IDs to bookmark folder IDs.
+ * @param {Function|undefined} onProgress - Optional progress callback function.
+ * @returns {Promise<Object>} Processing results.
+ */
+export async function processRaindropsPage(
+  raindrops,
+  collectionToFolderMap,
+  onProgress,
+) {
+  let successCount = 0;
+  let skipCount = 0;
+  let errorCount = 0;
+
+  for (let i = 0; i < raindrops.length; i++) {
+    const raindrop = raindrops[i];
+
+    try {
+      const bookmark = await createBookmarkFromRaindrop(
+        raindrop,
+        collectionToFolderMap,
+      );
+
+      if (bookmark) {
+        successCount++;
+      } else {
+        skipCount++;
+      }
+
+      // Call progress callback if provided
+      if (onProgress && typeof onProgress === 'function') {
+        onProgress(
+          i + 1,
+          raindrops.length,
+          successCount,
+          skipCount,
+          errorCount,
+        );
+      }
+    } catch (error) {
+      console.error(`Error processing raindrop: ${raindrop.title}`, error);
+      errorCount++;
+    }
+  }
+
+  console.log(
+    `Page processing completed: ${successCount} created, ${skipCount} skipped, ${errorCount} errors`,
+  );
+
+  return {
+    successCount,
+    skipCount,
+    errorCount,
+    totalProcessed: raindrops.length,
+  };
 }
 
 /**
@@ -122,9 +322,7 @@ export function parseRaindropBackup(htmlContent) {
       parsedStructure[0].type === 'folder' &&
       parsedStructure[0].title === 'Export'
     ) {
-      console.log(
-        'Detected "Export" folder, using its content as the root.',
-      );
+      console.log('Detected "Export" folder, using its content as the root.');
       return parsedStructure[0].children;
     }
 
@@ -272,13 +470,12 @@ function getCurrentLevel(line) {
 }
 
 /**
- * Adds a new raindrop to the user's collection.
+ * Adds new raindrops to the user's collection.
  *
  * @async
  * @param {string} token - The API token for the Raindrop API.
- * @param {string} url - The URL of the page to add.
- * @param {string} title - The title of the page.
- * @returns {Promise<Object>} The newly created raindrop.
+ * @param {Array<Object>} raindrops - An array of raindrop objects to add.
+ * @returns {Promise<Array<Object>>} The newly created raindrops.
  */
 export async function addRaindrops(token, raindrops) {
   try {
@@ -309,4 +506,334 @@ export async function addRaindrops(token, raindrops) {
     console.error('Error adding raindrops:', error);
     throw error;
   }
+}
+
+/**
+ * Fetches user data including groups information from the Raindrop API.
+ * This function gets the authenticated user's data, which includes groups that organize collections.
+ *
+ * @async
+ * @param {string} token - The API token for the Raindrop API.
+ * @returns {Promise<Object>} User data object containing groups information.
+ */
+export async function getUserData(token) {
+  try {
+    console.log('Fetching user data with groups...');
+
+    const response = await fetch('https://api.raindrop.io/rest/v1/user', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.result && data.user) {
+        console.log(
+          `Found user data with ${data.user.groups?.length || 0} groups`,
+        );
+        return data.user;
+      } else {
+        throw new Error(data.errorMessage || 'Failed to fetch user data');
+      }
+    } else {
+      throw new Error(
+        `Failed to fetch user data: ${response.status} ${response.statusText}`,
+      );
+    }
+  } catch (error) {
+    console.error('Error fetching user data:', error);
+    throw error;
+  }
+}
+
+/**
+ * Fetches all root collections from the Raindrop API.
+ * This function gets all collections that don't have a parent (root level).
+ *
+ * @async
+ * @param {string} token - The API token for the Raindrop API.
+ * @returns {Promise<Array>} Array of root collections.
+ */
+export async function getRootCollections(token) {
+  try {
+    console.log('Fetching root collections...');
+
+    const response = await fetch(
+      'https://api.raindrop.io/rest/v1/collections',
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.result && data.items) {
+        console.log(`Found ${data.items.length} root collections`);
+        return data.items;
+      } else {
+        throw new Error(
+          data.errorMessage || 'Failed to fetch root collections',
+        );
+      }
+    } else {
+      throw new Error(
+        `Failed to fetch root collections: ${response.status} ${response.statusText}`,
+      );
+    }
+  } catch (error) {
+    console.error('Error fetching root collections:', error);
+    throw error;
+  }
+}
+
+/**
+ * Fetches all child collections from the Raindrop API.
+ * This function gets all collections that have a parent (nested collections).
+ *
+ * @async
+ * @param {string} token - The API token for the Raindrop API.
+ * @returns {Promise<Array>} Array of child collections.
+ */
+export async function getChildCollections(token) {
+  try {
+    console.log('Fetching child collections...');
+
+    const response = await fetch(
+      'https://api.raindrop.io/rest/v1/collections/childrens',
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.result && data.items) {
+        console.log(`Found ${data.items.length} child collections`);
+        return data.items;
+      } else {
+        throw new Error(
+          data.errorMessage || 'Failed to fetch child collections',
+        );
+      }
+    } else {
+      throw new Error(
+        `Failed to fetch child collections: ${response.status} ${response.statusText}`,
+      );
+    }
+  } catch (error) {
+    console.error('Error fetching child collections:', error);
+    throw error;
+  }
+}
+
+/**
+ * Builds a hierarchical collection tree structure from root and child collections.
+ * This function organizes collections into a tree structure based on parent-child relationships.
+ *
+ * @param {Array} rootCollections - Array of root collections.
+ * @param {Array} childCollections - Array of child collections.
+ * @returns {Array} Hierarchical tree structure of collections.
+ */
+export function buildCollectionTree(rootCollections, childCollections) {
+  console.log('Building collection tree structure...');
+
+  // Create a map for quick lookup of children by parent ID
+  const childrenByParent = new Map();
+
+  childCollections.forEach((collection) => {
+    const parentId = collection.parent?.$id;
+    if (parentId) {
+      if (!childrenByParent.has(parentId)) {
+        childrenByParent.set(parentId, []);
+      }
+      childrenByParent.get(parentId).push(collection);
+    }
+  });
+
+  // Sort children by their sort value (descending, as per Raindrop API)
+  childrenByParent.forEach((children) => {
+    children.sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  });
+
+  // Recursive function to attach children to their parents
+  function attachChildren(collection) {
+    const children = childrenByParent.get(collection._id) || [];
+    return {
+      id: collection._id,
+      title: collection.title,
+      sort: collection.sort || 0,
+      children: children.map((child) => attachChildren(child)),
+    };
+  }
+
+  // Sort root collections by their sort value (descending)
+  const sortedRootCollections = [...rootCollections].sort(
+    (a, b) => (a.sort || 0) - (b.sort || 0),
+  );
+
+  // Build the tree starting from sorted root collections
+  const tree = sortedRootCollections.map((root) => attachChildren(root));
+
+  // Add "Unsorted" folder at the beginning
+  const unsortedFolder = {
+    id: 'unsorted',
+    title: 'Unsorted',
+    sort: Number.MAX_SAFE_INTEGER, // Ensure it sorts first
+    children: [],
+  };
+
+  tree.unshift(unsortedFolder);
+
+  console.log(
+    `Built collection tree with ${tree.length} collections (including Unsorted)`,
+  );
+  return tree;
+}
+
+/**
+ * Builds a hierarchical collection tree structure organized by groups.
+ * This function organizes collections into groups and maintains hierarchical structure within each group.
+ *
+ * @param {Array} rootCollections - Array of root collections.
+ * @param {Array} childCollections - Array of child collections.
+ * @param {Array} groups - Array of groups that organize collections.
+ * @returns {Array} Hierarchical tree structure organized by groups.
+ */
+export function buildCollectionTreeWithGroups(
+  rootCollections,
+  childCollections,
+  groups,
+) {
+  console.log('Building collection tree structure with groups...');
+
+  // First build the basic collection tree structure
+  const childrenByParent = new Map();
+  childCollections.forEach((collection) => {
+    const parentId = collection.parent?.$id;
+    if (parentId) {
+      if (!childrenByParent.has(parentId)) {
+        childrenByParent.set(parentId, []);
+      }
+      childrenByParent.get(parentId).push(collection);
+    }
+  });
+
+  // Sort children by their sort value
+  childrenByParent.forEach((children) => {
+    children.sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  });
+
+  // Create maps for quick lookup
+  const allCollections = new Map();
+  [...rootCollections, ...childCollections].forEach((collection) => {
+    allCollections.set(collection._id, collection);
+  });
+
+  // Recursive function to attach children to their parents
+  function attachChildren(collection) {
+    const children = childrenByParent.get(collection._id) || [];
+    return {
+      id: collection._id,
+      title: collection.title,
+      sort: collection.sort || 0,
+      children: children.map((child) => attachChildren(child)),
+    };
+  }
+
+  const result = [];
+
+  // Add "Unsorted" folder first
+  const unsortedFolder = {
+    id: 'unsorted',
+    title: 'Unsorted',
+    sort: -1, // Ensure it sorts first
+    children: /** @type {Array} */ ([]),
+    isGroup: false,
+  };
+  result.push(unsortedFolder);
+
+  if (groups && groups.length > 0) {
+    // Sort groups by their sort value
+    const sortedGroups = [...groups].sort(
+      (a, b) => (a.sort || 0) - (b.sort || 0),
+    );
+
+    // Process each group
+    sortedGroups.forEach((group) => {
+      const groupFolder = {
+        id: `group_${group.title}`,
+        title: group.title,
+        sort: group.sort || 0,
+        children: /** @type {Array} */ ([]),
+        isGroup: true,
+        hidden: group.hidden || false,
+      };
+
+      // Add collections to this group in the specified order
+      if (group.collections && group.collections.length > 0) {
+        group.collections.forEach((collectionId) => {
+          const collection = allCollections.get(collectionId);
+          if (collection) {
+            // Only add root collections here; children will be attached recursively
+            if (!collection.parent || !collection.parent.$id) {
+              groupFolder.children.push(attachChildren(collection));
+            }
+          }
+        });
+      }
+
+      result.push(groupFolder);
+    });
+
+    // Handle collections not in any group (add them to a default "Other" group)
+    const collectionsInGroups = new Set();
+    groups.forEach((group) => {
+      if (group.collections) {
+        group.collections.forEach((id) => collectionsInGroups.add(id));
+      }
+    });
+
+    const ungroupedCollections = rootCollections.filter(
+      (collection) => !collectionsInGroups.has(collection._id),
+    );
+
+    if (ungroupedCollections.length > 0) {
+      const otherFolder = {
+        id: 'group_other',
+        title: 'Other',
+        sort: Number.MAX_SAFE_INTEGER,
+        children: /** @type {Array} */ (
+          ungroupedCollections.map((collection) => attachChildren(collection))
+        ),
+        isGroup: true,
+        hidden: false,
+      };
+      result.push(otherFolder);
+    }
+  } else {
+    // No groups defined, fall back to the original structure
+    console.log('No groups found, falling back to original structure');
+    const sortedRootCollections = [...rootCollections].sort(
+      (a, b) => (a.sort || 0) - (b.sort || 0),
+    );
+
+    const tree = sortedRootCollections.map((root) => attachChildren(root));
+    result.push(...tree);
+  }
+
+  console.log(
+    `Built collection tree with ${result.length} top-level items (including groups and Unsorted)`,
+  );
+  return result;
 }

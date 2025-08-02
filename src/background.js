@@ -3,12 +3,21 @@ import { showNotification } from './components/notification.js';
 import {
   parseRaindropBackup,
   getLatestChange,
-  exportAllRaindrops,
   addRaindrops,
+  getRootCollections,
+  getChildCollections,
+  buildCollectionTree,
+  getUserData,
+  buildCollectionTreeWithGroups,
+  fetchRaindropsPaginated,
+  createBookmarkFromRaindrop,
+  processRaindropsPage,
 } from './components/raindrop.js';
 import {
   deleteExistingRaindropFolder,
   createBookmarksFromStructure,
+  deleteExistingRaindropSyncFolder,
+  createCollectionFolderStructure,
 } from './components/bookmarks.js';
 
 console.log('Raindrop Sync background service worker started');
@@ -100,6 +109,25 @@ function sendStatusUpdate(status, type, step) {
 // Check if sync is needed by comparing the latest change date with the last processed date
 async function checkIfSyncNeeded(token) {
   try {
+    // Check if local "Raindrop" bookmark folder exists
+    const searchResults = await chrome.bookmarks.search({
+      title: 'RaindropSync',
+    });
+    const raindropFolderExists = searchResults.some(
+      (bookmark) => !bookmark.url,
+    ); // folder has no URL
+
+    if (!raindropFolderExists) {
+      console.log('Local "Raindrop" bookmark folder not found - sync needed');
+      // Still get the latest change timestamp for proper tracking
+      const latestChangeTimestamp = await getLatestChange(token);
+      return {
+        syncNeeded: true,
+        latestChangeTimestamp: latestChangeTimestamp || Date.now(),
+        reason: 'missing_local_folder',
+      };
+    }
+
     // Get the timestamp of the latest change (updated, created, or deleted)
     const latestChangeTimestamp = await getLatestChange(token);
 
@@ -127,70 +155,11 @@ async function checkIfSyncNeeded(token) {
     return {
       syncNeeded,
       latestChangeTimestamp,
+      reason: syncNeeded ? 'new_changes' : 'up_to_date',
     };
   } catch (error) {
     console.error('Error checking if sync is needed:', error);
     throw error;
-  }
-}
-
-// Main function to sync Raindrop backup with browser bookmarks
-async function syncRaindropBookmarks(htmlContent) {
-  try {
-    sendStatusUpdate('Parsing backup content...', 'info', 'parsing');
-
-    // Parse the backup HTML
-    const bookmarkStructure = parseRaindropBackup(htmlContent);
-
-    sendStatusUpdate(
-      'Deleting existing Raindrop folder...',
-      'info',
-      'deleting',
-    );
-
-    // Delete existing Raindrop folder
-    await deleteExistingRaindropFolder();
-
-    sendStatusUpdate('Creating new Raindrop folder...', 'info', 'creating');
-
-    // Create new Raindrop folder in bookmarks bar
-    const bookmarksBar = await chrome.bookmarks.getTree();
-    let parentId = '1'; // Default to bookmarks bar
-
-    if (bookmarksBar && bookmarksBar[0] && bookmarksBar[0].children) {
-      const bookmarksBarNode = bookmarksBar[0].children.find(
-        (node) => node.id === '1',
-      );
-      if (bookmarksBarNode) {
-        parentId = bookmarksBarNode.id;
-      }
-    }
-
-    const raindropFolder = await chrome.bookmarks.create({
-      parentId: parentId,
-      title: 'Raindrop',
-    });
-
-    sendStatusUpdate('Importing bookmarks...', 'info', 'importing');
-
-    // Import all bookmarks into the new folder
-    await createBookmarksFromStructure(raindropFolder.id, bookmarkStructure);
-
-    // Save the bookmark import timestamp
-    await chrome.storage.sync.set({
-      lastImportTime: Date.now(),
-    });
-
-    console.log('Successfully synced Raindrop bookmarks to browser');
-    return true;
-  } catch (error) {
-    console.error('Error syncing Raindrop bookmarks:', error);
-    sendStatusUpdate(`Failed to sync bookmarks: ${error.message}`, 'error');
-    showNotification(
-      'Raindrop Sync Failed',
-      `Failed to import bookmarks to browser: ${error.message}`,
-    );
-    return false;
   }
 }
 
@@ -229,29 +198,135 @@ async function startBackupProcess(token) {
       return { success: true, message: 'No sync needed - already up to date' };
     }
 
-    // Step 3: New changes found, export all raindrops
-    const changeAge = Math.round(
-      (Date.now() - syncCheck.latestChangeTimestamp) / (1000 * 60),
-    );
+    // Step 3: Sync needed, prepare collection structure
+    let statusMessage = '';
+    if (syncCheck.reason === 'missing_local_folder') {
+      statusMessage =
+        'Local bookmark folder missing. Restoring your Raindrop bookmarks...';
+    } else {
+      const changeAge = Math.round(
+        (Date.now() - (syncCheck.latestChangeTimestamp || Date.now())) /
+          (1000 * 60),
+      );
+      statusMessage = `New changes found! Latest change was ${changeAge} minutes ago. Setting up collection structure...`;
+    }
+
+    sendStatusUpdate(statusMessage, 'info', 'preparing');
+
+    // Step 3a: Delete existing bookmark folders
     sendStatusUpdate(
-      `New changes found! Latest change was ${changeAge} minutes ago. Exporting...`,
+      'Deleting existing bookmark folders...',
       'info',
-      'exporting',
+      'deleting_folders',
     );
+    await deleteExistingRaindropFolder(); // Delete old "Raindrop" folder
+    await deleteExistingRaindropSyncFolder(); // Delete existing "RaindropSync" folder
 
-    const htmlContent = await exportAllRaindrops(token);
-
-    // Step 4: Parse and import bookmarks
+    // Step 3b: Fetch user data with groups and collection structure from Raindrop API
     sendStatusUpdate(
-      'Importing raindrops to bookmarks...',
+      'Fetching user data and collection structure...',
       'info',
-      'importing',
+      'fetching_collections',
+    );
+    const [userData, rootCollections, childCollections] = await Promise.all([
+      getUserData(token),
+      getRootCollections(token),
+      getChildCollections(token),
+    ]);
+
+    // Step 3c: Build collection tree organized by groups
+    const collectionTree = buildCollectionTreeWithGroups(
+      rootCollections,
+      childCollections,
+      userData.groups || [],
     );
 
-    const syncSuccess = await syncRaindropBookmarks(htmlContent);
-    if (syncSuccess) {
-      // Save the latest change timestamp as the last processed date
+    // Step 3d: Create RaindropSync folder in bookmarks bar
+    sendStatusUpdate(
+      'Creating RaindropSync folder structure...',
+      'info',
+      'creating_sync_folders',
+    );
+    const bookmarksBar = await chrome.bookmarks.getTree();
+    let parentId = '1'; // Default to bookmarks bar
+
+    if (bookmarksBar && bookmarksBar[0] && bookmarksBar[0].children) {
+      const bookmarksBarNode = bookmarksBar[0].children.find(
+        (node) => node.id === '1',
+      );
+      if (bookmarksBarNode) {
+        parentId = bookmarksBarNode.id;
+      }
+    }
+
+    const raindropSyncFolder = await chrome.bookmarks.create({
+      parentId: parentId,
+      title: 'RaindropSync',
+    });
+
+    // Step 3e: Create collection folder structure
+    const collectionToFolderMap = await createCollectionFolderStructure(
+      raindropSyncFolder.id,
+      collectionTree,
+    );
+
+    // Step 3f: Fetch and create bookmarks using paginated API
+    sendStatusUpdate(
+      'Fetching and creating bookmarks...',
+      'info',
+      'fetching_raindrops',
+    );
+
+    let totalBookmarksCreated = 0;
+    let totalBookmarksSkipped = 0;
+    let totalBookmarksErrors = 0;
+
+    // Create callback function to process each page of raindrops
+    const processPageCallback = async (
+      raindrops,
+      pageNumber,
+      totalProcessed,
+    ) => {
+      sendStatusUpdate(
+        `Processing page ${pageNumber + 1}: ${raindrops.length} raindrops (${
+          totalProcessed + raindrops.length
+        } total)...`,
+        'info',
+        'processing_raindrops',
+      );
+
+      // Process this page and create bookmarks
+      const pageResult = await processRaindropsPage(
+        raindrops,
+        collectionToFolderMap,
+        undefined,
+      );
+
+      // Update totals
+      totalBookmarksCreated += pageResult.successCount;
+      totalBookmarksSkipped += pageResult.skipCount;
+      totalBookmarksErrors += pageResult.errorCount;
+
+      return pageResult;
+    };
+
+    // Fetch all raindrops page by page and create bookmarks
+    const fetchResult = await fetchRaindropsPaginated(
+      token,
+      processPageCallback,
+      {}, // Use default options
+    );
+
+    sendStatusUpdate(
+      `Bookmark creation completed: ${totalBookmarksCreated} created, ${totalBookmarksSkipped} skipped, ${totalBookmarksErrors} errors`,
+      totalBookmarksErrors > 0 ? 'warning' : 'success',
+      'completed_bookmarks',
+    );
+
+    if (fetchResult.success && totalBookmarksCreated > 0) {
+      // Save both the import time and the latest change timestamp
       await chrome.storage.sync.set({
+        lastImportTime: Date.now(),
         lastProcessedChangeDate: syncCheck.latestChangeTimestamp,
       });
 
@@ -272,19 +347,24 @@ async function startBackupProcess(token) {
 
       cleanupBackupProcess();
       sendStatusUpdate(
-        'Raindrops exported and imported successfully!',
+        `Sync completed successfully! Created ${totalBookmarksCreated} bookmarks from ${fetchResult.totalPages} pages.`,
         'success',
         'completed',
       );
       showNotification(
         'Raindrop Sync Complete',
-        'Your Raindrop.io bookmarks have been imported to browser bookmarks successfully.',
+        `Successfully synced ${totalBookmarksCreated} raindrops to your browser bookmarks.`,
         'sync-complete',
       );
       return { success: true, message: 'Sync completed successfully' };
     } else {
       cleanupBackupProcess();
-      return { success: false, message: 'Failed to import bookmarks' };
+      const errorMessage =
+        totalBookmarksCreated === 0
+          ? 'No bookmarks were created - check your Raindrop collections'
+          : `Partial sync: ${totalBookmarksCreated} bookmarks created with ${totalBookmarksErrors} errors`;
+      sendStatusUpdate(errorMessage, 'error', 'failed');
+      return { success: false, message: errorMessage };
     }
   } catch (error) {
     console.error('Sync process error:', error);
@@ -293,6 +373,7 @@ async function startBackupProcess(token) {
     showNotification(
       'Raindrop Sync Failed',
       `Sync process failed: ${error.message}`,
+      'backup-failed',
     );
     return { success: false, message: error.message };
   }
@@ -550,62 +631,7 @@ chrome.action.onClicked.addListener(async () => {
     case 'open_options':
       chrome.runtime.openOptionsPage();
       break;
-    case 'none':
-      break;
     default:
-      try {
-        await setBadge('⏳');
-
-        const tabs = await chrome.tabs.query({
-          highlighted: true,
-          currentWindow: true,
-        });
-        const raindrops = tabs
-          .filter(
-            (tab) =>
-              tab.url &&
-              (tab.url.startsWith('http:') || tab.url.startsWith('https:')),
-          )
-          .map((tab) => ({
-            link: tab.url,
-            title: tab.title,
-            pleaseParse: {},
-          }));
-
-        await addRaindrops(raindropToken, raindrops);
-
-        const searchResults = await chrome.bookmarks.search({
-          title: 'Raindrop',
-        });
-        let parentId = '1';
-        if (searchResults.length > 0) {
-          const raindropFolder = searchResults.find((bookmark) => !bookmark.url);
-          if (raindropFolder) {
-            parentId = raindropFolder.id;
-          }
-        } else {
-          const newFolder = await chrome.bookmarks.create({
-            parentId: '1',
-            title: 'Raindrop',
-          });
-          parentId = newFolder.id;
-        }
-
-        for (const tab of tabs) {
-          await chrome.bookmarks.create({
-            parentId,
-            title: tab.title,
-            url: tab.url,
-          });
-        }
-
-        await setBadge('✅');
-      } catch (error) {
-        console.error('Failed to add bookmark:', error);
-        await setBadge('😵‍💫');
-      } finally {
-        setTimeout(() => clearBadge(), 3000);
-      }
       break;
   }
 });
