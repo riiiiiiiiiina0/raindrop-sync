@@ -538,6 +538,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 chrome.notifications.onClicked.addListener((notificationId) => {
   if (notificationId === 'sync-complete') {
     chrome.tabs.create({ url: 'chrome://bookmarks' });
+  } else if (notificationId === 'save-success') {
+    // Open Raindrop unsorted collection when save success notification is clicked
+    chrome.tabs.create({ url: 'https://app.raindrop.io/my/-1' });
   }
 });
 
@@ -592,6 +595,227 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 // Handle extension install/enable
+/**
+ * Gets highlighted tabs or current active tab and saves them to Raindrop and local bookmarks.
+ * @param {string} token - The Raindrop API token
+ */
+async function saveCurrentTabsToRaindrop(token) {
+  try {
+    setBadge('📥');
+    sendStatusUpdate('Getting tabs to save...', 'info', 'save_tabs');
+
+    // Get highlighted tabs first, or current active tab if none highlighted
+    const tabs = await getTabsToSave();
+
+    if (tabs.length === 0) {
+      showNotification('Raindrop Save', 'No tabs to save', 'save-no-tabs');
+      clearBadge();
+      return;
+    }
+
+    sendStatusUpdate(
+      `Saving ${tabs.length} tab(s) to Raindrop...`,
+      'info',
+      'save_tabs',
+    );
+
+    // Convert tabs to raindrop format with pleaseParse
+    const raindrops = tabs.map((tab) => ({
+      link: tab.url,
+      title: tab.title,
+      collection: { $id: -1 }, // -1 is unsorted collection
+      pleaseParse: {},
+    }));
+
+    // Save to Raindrop
+    const savedRaindrops = await addRaindrops(token, raindrops);
+    console.log(`Saved ${savedRaindrops.length} raindrops to Raindrop.io`);
+
+    // Save to local bookmarks under RaindropSync > Unsorted
+    await saveTabsToLocalBookmarks(tabs);
+
+    // Show success notification
+    const tabWord = tabs.length === 1 ? 'tab' : 'tabs';
+    showNotification(
+      'Raindrop Save Complete',
+      `Successfully saved ${tabs.length} ${tabWord} to Raindrop and bookmarks`,
+      'save-success',
+    );
+    sendStatusUpdate(
+      `Successfully saved ${tabs.length} ${tabWord}`,
+      'success',
+      'save_tabs',
+    );
+  } catch (error) {
+    console.error('Error saving tabs to Raindrop:', error);
+    showNotification(
+      'Raindrop Save Failed',
+      `Failed to save tabs: ${error.message}`,
+      'save-error',
+    );
+    sendStatusUpdate(
+      `Failed to save tabs: ${error.message}`,
+      'error',
+      'save_tabs',
+    );
+  } finally {
+    clearBadge();
+  }
+}
+
+/**
+ * Gets tabs to save - highlighted tabs if any, otherwise current active tab.
+ * @returns {Promise<Array>} Array of tab objects to save
+ */
+async function getTabsToSave() {
+  return new Promise((resolve) => {
+    // First try to get highlighted tabs
+    chrome.tabs.query(
+      { highlighted: true, currentWindow: true },
+      (highlightedTabs) => {
+        if (highlightedTabs && highlightedTabs.length > 0) {
+          // Filter out chrome:// and other non-web URLs
+          const validTabs = highlightedTabs.filter(
+            (tab) =>
+              tab.url &&
+              (tab.url.startsWith('http://') || tab.url.startsWith('https://')),
+          );
+          resolve(validTabs);
+        } else {
+          // Fallback to current active tab
+          chrome.tabs.query(
+            { active: true, currentWindow: true },
+            (activeTabs) => {
+              if (activeTabs && activeTabs.length > 0) {
+                const activeTab = activeTabs[0];
+                if (
+                  activeTab.url &&
+                  (activeTab.url.startsWith('http://') ||
+                    activeTab.url.startsWith('https://'))
+                ) {
+                  resolve([activeTab]);
+                } else {
+                  resolve([]);
+                }
+              } else {
+                resolve([]);
+              }
+            },
+          );
+        }
+      },
+    );
+  });
+}
+
+/**
+ * Saves tabs to local bookmarks under RaindropSync > Unsorted folder.
+ * @param {Array} tabs - Array of tab objects to save
+ */
+async function saveTabsToLocalBookmarks(tabs) {
+  try {
+    // Find or create RaindropSync folder
+    const raindropSyncFolder = await findOrCreateRaindropSyncFolder();
+
+    // Find or create Unsorted folder under RaindropSync
+    const unsortedFolder = await findOrCreateUnsortedFolder(
+      raindropSyncFolder.id,
+    );
+
+    // Create bookmarks for each tab (at the front of the folder)
+    for (const tab of tabs) {
+      await chrome.bookmarks.create({
+        parentId: unsortedFolder.id,
+        title: tab.title || 'Untitled',
+        url: tab.url,
+        index: 0, // Place at the front of the folder
+      });
+      console.log(`Created bookmark: ${tab.title} -> ${tab.url}`);
+    }
+  } catch (error) {
+    console.error('Error saving tabs to local bookmarks:', error);
+    throw error;
+  }
+}
+
+/**
+ * Finds or creates the RaindropSync folder in bookmarks.
+ * @returns {Promise<Object>} The RaindropSync folder bookmark object
+ */
+async function findOrCreateRaindropSyncFolder() {
+  // Search for existing RaindropSync folder
+  const searchResults = await chrome.bookmarks.search({
+    title: 'RaindropSync',
+  });
+
+  for (const bookmark of searchResults) {
+    // Check if this is a folder (no URL means it's a folder)
+    if (!bookmark.url) {
+      return bookmark;
+    }
+  }
+
+  // If not found, create it in the bookmark bar
+  const bookmarkBar = await findBookmarkBar();
+  return await chrome.bookmarks.create({
+    parentId: bookmarkBar.id,
+    title: 'RaindropSync',
+  });
+}
+
+/**
+ * Finds or creates the Unsorted folder under RaindropSync.
+ * @param {string} parentId - The parent folder ID (RaindropSync folder)
+ * @returns {Promise<Object>} The Unsorted folder bookmark object
+ */
+async function findOrCreateUnsortedFolder(parentId) {
+  // Get children of RaindropSync folder
+  const children = await chrome.bookmarks.getChildren(parentId);
+
+  // Look for existing Unsorted folder
+  for (const child of children) {
+    if (!child.url && child.title === 'Unsorted') {
+      return child;
+    }
+  }
+
+  // If not found, create it
+  return await chrome.bookmarks.create({
+    parentId: parentId,
+    title: 'Unsorted',
+  });
+}
+
+/**
+ * Finds the bookmark bar folder.
+ * @returns {Promise<Object>} The bookmark bar folder object
+ */
+async function findBookmarkBar() {
+  const bookmarkTree = await chrome.bookmarks.getTree();
+  const rootNode = bookmarkTree[0];
+
+  // Look for bookmark bar (usually the first child)
+  if (rootNode.children) {
+    for (const child of rootNode.children) {
+      if (
+        !child.url &&
+        (child.title === 'Bookmarks bar' || child.title === 'Bookmarks Bar')
+      ) {
+        return child;
+      }
+    }
+
+    // Fallback to first folder if bookmark bar not found by name
+    for (const child of rootNode.children) {
+      if (!child.url) {
+        return child;
+      }
+    }
+  }
+
+  throw new Error('Could not find bookmark bar');
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Extension installed/enabled - initializing auto backup');
   // Initialize auto backup if enabled
@@ -625,6 +849,9 @@ chrome.action.onClicked.addListener(async () => {
   }
 
   switch (actionButtonBehavior) {
+    case 'save':
+      await saveCurrentTabsToRaindrop(raindropToken);
+      break;
     case 'sync':
       startBackup();
       break;
