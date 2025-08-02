@@ -1,53 +1,65 @@
-/**
- * Deletes the existing "Raindrop" folder from browser bookmarks.
- * This function searches for the folder by title and deletes it.
- *
- * @async
- * @returns {Promise<void>}
- */
-export async function deleteExistingRaindropFolder() {
-  try {
-    // Search for existing Raindrop folder
-    const searchResults = await chrome.bookmarks.search({ title: 'Raindrop' });
-
-    for (const bookmark of searchResults) {
-      // Check if this is a folder (no URL means it's a folder)
-      if (!bookmark.url) {
-        console.log(`Deleting existing Raindrop folder: ${bookmark.id}`);
-        await chrome.bookmarks.removeTree(bookmark.id);
-      }
-    }
-  } catch (error) {
-    console.error('Error deleting existing Raindrop folder:', error);
-    throw error;
-  }
+export async function createBookmark(parentId, title, url) {
+  return await chrome.bookmarks.create({
+    parentId,
+    title,
+    url,
+  });
 }
 
-/**
- * Deletes the existing "RaindropSync" folder from browser bookmarks.
- * This function searches for the folder by title and deletes it.
- *
- * @async
- * @returns {Promise<void>}
- */
-export async function deleteExistingRaindropSyncFolder() {
-  try {
-    // Search for existing RaindropSync folder
-    const searchResults = await chrome.bookmarks.search({
-      title: 'RaindropSync',
-    });
+export async function updateBookmark(bookmarkId, changes) {
+  return await chrome.bookmarks.update(bookmarkId, changes);
+}
 
-    for (const bookmark of searchResults) {
-      // Check if this is a folder (no URL means it's a folder)
-      if (!bookmark.url) {
-        console.log(`Deleting existing RaindropSync folder: ${bookmark.id}`);
-        await chrome.bookmarks.removeTree(bookmark.id);
+export async function deleteBookmark(bookmarkId) {
+  await chrome.bookmarks.remove(bookmarkId);
+}
+
+export async function createFolder(parentId, title) {
+  return await chrome.bookmarks.create({
+    parentId,
+    title,
+  });
+}
+
+export async function updateFolder(folderId, changes) {
+  return await chrome.bookmarks.update(folderId, changes);
+}
+
+export async function deleteFolder(folderId) {
+  await chrome.bookmarks.removeTree(folderId);
+}
+
+export async function getLocalBookmarks(rootFolderId) {
+  const bookmarks = new Map();
+  const nodesToVisit = [rootFolderId];
+  while (nodesToVisit.length > 0) {
+    const nodeId = nodesToVisit.pop();
+    const children = await chrome.bookmarks.getChildren(nodeId);
+    for (const child of children) {
+      if (child.url) {
+        bookmarks.set(child.id, child);
+      } else {
+        nodesToVisit.push(child.id);
       }
     }
-  } catch (error) {
-    console.error('Error deleting existing RaindropSync folder:', error);
-    throw error;
   }
+  return bookmarks;
+}
+
+export async function getLocalFolders(rootFolderId) {
+  const folders = new Map();
+  const nodesToVisit = [rootFolderId];
+  while (nodesToVisit.length > 0) {
+    const nodeId = nodesToVisit.pop();
+    const children = await chrome.bookmarks.getChildren(nodeId);
+    for (const child of children) {
+      if (!child.url) {
+        folders.set(child.id, child);
+        nodesToVisit.push(child.id);
+      }
+    }
+  }
+  return folders;
 }
 
 /**

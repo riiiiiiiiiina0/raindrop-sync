@@ -7,61 +7,41 @@
  * @param {string} token - The API token for the Raindrop API.
  * @returns {Promise<number|null>} The latest change timestamp (in milliseconds), or null if none found.
  */
-export async function getLatestChange(token) {
-  try {
-    const fetchOptions = {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-    };
+export async function getRaindropsUpdatedSince(
+  token,
+  lastSyncTimestamp,
+  collectionId = 0,
+) {
+  const query = `lastUpdate:>${new Date(lastSyncTimestamp).toISOString()}`;
+  const raindrops = [];
+  const onPageReceived = (items) => {
+    raindrops.push(...items);
+  };
+  await fetchRaindropsPaginated(token, onPageReceived, {
+    search: query,
+    collectionId: collectionId,
+  });
+  return raindrops;
+}
 
-    const urls = [
-      'https://api.raindrop.io/rest/v1/raindrops/0?perpage=1&sort=-lastUpdate', // latest updated/created
-      'https://api.raindrop.io/rest/v1/raindrops/-99?perpage=1&sort=-lastUpdate', // latest deleted
-    ];
+export async function getRaindropByIds(token, ids) {
+  const query = ids.map((id) => `_id:${id}`).join(' OR ');
+  const raindrops = [];
+  const onPageReceived = (items) => {
+    raindrops.push(...items);
+  };
+  await fetchRaindropsPaginated(token, onPageReceived, {
+    search: query,
+  });
+  return raindrops;
+}
 
-    const promises = urls.map((url) =>
-      fetch(url, fetchOptions).then((res) => {
-        if (!res.ok) {
-          throw new Error(
-            `API request failed: ${res.status} ${res.statusText}`,
-          );
-        }
-        return res.json();
-      }),
-    );
-
-    const results = await Promise.all(promises);
-    let latestTimestamp = 0;
-
-    results.forEach((data) => {
-      if (data.result && data.items && data.items.length > 0) {
-        const item = data.items[0];
-        if (item.lastUpdate) {
-          const timestamp = new Date(item.lastUpdate).getTime();
-          if (timestamp > latestTimestamp) {
-            latestTimestamp = timestamp;
-          }
-        }
-      }
-    });
-
-    if (latestTimestamp === 0) {
-      console.log('No raindrops found to determine last change.');
-      return null;
-    }
-
-    console.log(
-      'Latest change detected at:',
-      new Date(latestTimestamp).toISOString(),
-    );
-    return latestTimestamp;
-  } catch (error) {
-    console.error('Error getting latest change:', error);
-    throw error;
-  }
+export async function getCollections(token) {
+  const [rootCollections, childCollections] = await Promise.all([
+    getRootCollections(token),
+    getChildCollections(token),
+  ]);
+  return [...rootCollections, ...childCollections];
 }
 
 /**

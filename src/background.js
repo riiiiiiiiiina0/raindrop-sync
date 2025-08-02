@@ -1,24 +1,32 @@
 import { setBadge, clearBadge } from './components/actionButton.js';
 import { showNotification } from './components/notification.js';
 import {
-  parseRaindropBackup,
-  getLatestChange,
-  addRaindrops,
-  getRootCollections,
-  getChildCollections,
-  buildCollectionTree,
+  getCollections,
+  getRaindropsUpdatedSince,
+  getRaindropByIds,
   getUserData,
   buildCollectionTreeWithGroups,
-  fetchRaindropsPaginated,
-  createBookmarkFromRaindrop,
-  processRaindropsPage,
 } from './components/raindrop.js';
 import {
-  deleteExistingRaindropFolder,
-  createBookmarksFromStructure,
-  deleteExistingRaindropSyncFolder,
-  createCollectionFolderStructure,
+  createBookmark,
+  updateBookmark,
+  deleteBookmark,
+  createFolder,
+  updateFolder,
+  deleteFolder,
+  getLocalBookmarks,
+  getLocalFolders,
 } from './components/bookmarks.js';
+import {
+  getMetadata,
+  setMetadata,
+  getCollectionMapping,
+  setCollectionMapping,
+  getRaindropMapping,
+  setRaindropMapping,
+  getLastSyncTimestamp,
+  setLastSyncTimestamp,
+} from './components/metadata.js';
 
 console.log('Raindrop Sync background service worker started');
 
@@ -106,66 +114,133 @@ function sendStatusUpdate(status, type, step) {
   }
 }
 
-// Check if sync is needed by comparing the latest change date with the last processed date
-async function checkIfSyncNeeded(token) {
-  try {
-    // Check if local "Raindrop" bookmark folder exists
-    const searchResults = await chrome.bookmarks.search({
-      title: 'RaindropSync',
-    });
-    const raindropFolderExists = searchResults.some(
-      (bookmark) => !bookmark.url,
-    ); // folder has no URL
+async function syncCollections(token, rootFolderId) {
+  const [collections, userData, localFolders, collectionMapping] =
+    await Promise.all([
+      getCollections(token),
+      getUserData(token),
+      getLocalFolders(rootFolderId),
+      getCollectionMapping(),
+    ]);
 
-    if (!raindropFolderExists) {
-      console.log('Local "Raindrop" bookmark folder not found - sync needed');
-      // Still get the latest change timestamp for proper tracking
-      const latestChangeTimestamp = await getLatestChange(token);
-      return {
-        syncNeeded: true,
-        latestChangeTimestamp: latestChangeTimestamp || Date.now(),
-        reason: 'missing_local_folder',
-      };
+  const remoteCollections = new Map(collections.map((c) => [c._id, c]));
+  const localFoldersById = new Map(
+    Array.from(localFolders.values()).map((f) => [f.id, f]),
+  );
+
+  // Sync remote to local
+  for (const collection of collections) {
+    try {
+      const folderId = collectionMapping.get(collection._id);
+      if (folderId && localFoldersById.has(folderId)) {
+        // Existing folder, check for updates
+        const folder = localFoldersById.get(folderId);
+        if (folder.title !== collection.title) {
+          await updateFolder(folderId, { title: collection.title });
+        }
+      } else {
+        // New folder
+        const parentId = collection.parent
+          ? collectionMapping.get(collection.parent.$id)
+          : rootFolderId;
+        if (parentId) {
+          const newFolder = await createFolder(parentId, collection.title);
+          collectionMapping.set(collection._id, newFolder.id);
+        }
+      }
+    } catch (error) {
+      console.error(
+        `Error processing collection ${collection._id}:`,
+        error,
+      );
     }
-
-    // Get the timestamp of the latest change (updated, created, or deleted)
-    const latestChangeTimestamp = await getLatestChange(token);
-
-    if (latestChangeTimestamp === null) {
-      // No raindrops found at all, so no sync is needed
-      return { syncNeeded: false };
-    }
-
-    // Get the last processed change date from storage
-    const result = await chrome.storage.sync.get(['lastProcessedChangeDate']);
-    const lastProcessedDate = result.lastProcessedChangeDate || 0;
-
-    console.log(
-      'Latest change date from API:',
-      new Date(latestChangeTimestamp).toISOString(),
-    );
-    console.log(
-      'Last processed date from storage:',
-      new Date(lastProcessedDate).toISOString(),
-    );
-
-    // If the latest change is newer than the last processed date, a sync is needed
-    const syncNeeded = latestChangeTimestamp > lastProcessedDate;
-
-    return {
-      syncNeeded,
-      latestChangeTimestamp,
-      reason: syncNeeded ? 'new_changes' : 'up_to_date',
-    };
-  } catch (error) {
-    console.error('Error checking if sync is needed:', error);
-    throw error;
   }
+
+  // Sync local to remote (deletions)
+  for (const [collectionId, folderId] of collectionMapping.entries()) {
+    if (!remoteCollections.has(collectionId)) {
+      try {
+        await deleteFolder(folderId);
+      } catch (error) {
+        console.error(`Error deleting folder ${folderId}:`, error);
+      }
+      collectionMapping.delete(collectionId);
+    }
+  }
+
+  await setCollectionMapping(collectionMapping);
 }
 
-// Main backup process function - rewritten for new approach
+async function syncRaindrops(token, rootFolderId) {
+  const lastSync = await getLastSyncTimestamp();
+  const [
+    updatedRaindrops,
+    localBookmarks,
+    raindropMapping,
+    collectionMapping,
+  ] = await Promise.all([
+    getRaindropsUpdatedSince(token, lastSync),
+    getLocalBookmarks(rootFolderId),
+    getRaindropMapping(),
+    getCollectionMapping(),
+  ]);
+
+  const localBookmarksById = new Map(
+    Array.from(localBookmarks.values()).map((b) => [b.id, b]),
+  );
+
+  // Sync remote to local
+  for (const raindrop of updatedRaindrops) {
+    try {
+      const bookmarkId = raindropMapping.get(raindrop._id);
+      if (bookmarkId && localBookmarksById.has(bookmarkId)) {
+        // Existing bookmark, check for updates
+        const bookmark = localBookmarksById.get(bookmarkId);
+        const changes = {};
+        if (bookmark.title !== raindrop.title) {
+          changes.title = raindrop.title;
+        }
+        if (bookmark.url !== raindrop.link) {
+          changes.url = raindrop.link;
+        }
+        if (Object.keys(changes).length > 0) {
+          await updateBookmark(bookmarkId, changes);
+        }
+      } else {
+        // New bookmark
+        const parentId = collectionMapping.get(raindrop.collection.$id);
+        if (parentId) {
+          const newBookmark = await createBookmark(
+            parentId,
+            raindrop.title,
+            raindrop.link,
+          );
+          raindropMapping.set(raindrop._id, newBookmark.id);
+        }
+      }
+    } catch (error) {
+      console.error(`Error processing raindrop ${raindrop._id}:`, error);
+    }
+  }
+
+  // Sync deleted raindrops
+  const deletedRaindrops = await getRaindropsUpdatedSince(token, lastSync, -99);
+  for (const raindrop of deletedRaindrops) {
+    const bookmarkId = raindropMapping.get(raindrop._id);
+    if (bookmarkId) {
+      try {
+        await deleteBookmark(bookmarkId);
+      } catch (error) {
+        console.error(`Error deleting bookmark ${bookmarkId}:`, error);
+      }
+      raindropMapping.delete(raindrop._id);
+    }
+  }
+
+  await setRaindropMapping(raindropMapping);
+}
+
 async function startBackupProcess(token) {
-  // Prevent multiple concurrent backup processes
   if (isBackupProcessing) {
     sendStatusUpdate('Sync is already in progress. Please wait...', 'info');
     return { success: false, message: 'Already in progress' };
@@ -179,193 +254,39 @@ async function startBackupProcess(token) {
   try {
     isBackupProcessing = true;
     currentBackupStartTime = Date.now();
-
-    // Step 1: Show loading badge and status
     setBadge('⏳');
-    sendStatusUpdate('Checking for new changes...', 'info', 'checking');
+    sendStatusUpdate('Starting incremental sync...', 'info', 'starting');
 
-    // Step 2: Check if sync is needed
-    const syncCheck = await checkIfSyncNeeded(token);
-
-    if (!syncCheck.syncNeeded) {
-      // No new changes since last sync
-      cleanupBackupProcess();
-      sendStatusUpdate(
-        'No new changes found since last sync. Your bookmarks are up to date!',
-        'success',
-        'completed',
-      );
-      return { success: true, message: 'No sync needed - already up to date' };
-    }
-
-    // Step 3: Sync needed, prepare collection structure
-    let statusMessage = '';
-    if (syncCheck.reason === 'missing_local_folder') {
-      statusMessage =
-        'Local bookmark folder missing. Restoring your Raindrop bookmarks...';
-    } else {
-      const changeAge = Math.round(
-        (Date.now() - (syncCheck.latestChangeTimestamp || Date.now())) /
-          (1000 * 60),
-      );
-      statusMessage = `New changes found! Latest change was ${changeAge} minutes ago. Setting up collection structure...`;
-    }
-
-    sendStatusUpdate(statusMessage, 'info', 'preparing');
-
-    // Step 3a: Delete existing bookmark folders
-    sendStatusUpdate(
-      'Deleting existing bookmark folders...',
-      'info',
-      'deleting_folders',
-    );
-    await deleteExistingRaindropFolder(); // Delete old "Raindrop" folder
-    await deleteExistingRaindropSyncFolder(); // Delete existing "RaindropSync" folder
-
-    // Step 3b: Fetch user data with groups and collection structure from Raindrop API
-    sendStatusUpdate(
-      'Fetching user data and collection structure...',
-      'info',
-      'fetching_collections',
-    );
-    const [userData, rootCollections, childCollections] = await Promise.all([
-      getUserData(token),
-      getRootCollections(token),
-      getChildCollections(token),
-    ]);
-
-    // Step 3c: Build collection tree organized by groups
-    const collectionTree = buildCollectionTreeWithGroups(
-      rootCollections,
-      childCollections,
-      userData.groups || [],
-    );
-
-    // Step 3d: Create RaindropSync folder in bookmarks bar
-    sendStatusUpdate(
-      'Creating RaindropSync folder structure...',
-      'info',
-      'creating_sync_folders',
-    );
-    const bookmarksBar = await chrome.bookmarks.getTree();
-    let parentId = '1'; // Default to bookmarks bar
-
-    if (bookmarksBar && bookmarksBar[0] && bookmarksBar[0].children) {
-      const bookmarksBarNode = bookmarksBar[0].children.find(
-        (node) => node.id === '1',
-      );
-      if (bookmarksBarNode) {
-        parentId = bookmarksBarNode.id;
+    let rootFolder = (
+      await chrome.bookmarks.search({ title: 'RaindropSync' })
+    ).find((b) => !b.url);
+    if (!rootFolder) {
+      const bookmarksBar = await chrome.bookmarks.getTree();
+      let parentId = '1'; // Default to bookmarks bar
+      if (bookmarksBar && bookmarksBar[0] && bookmarksBar[0].children) {
+        const bookmarksBarNode = bookmarksBar[0].children.find(
+          (node) => node.id === '1',
+        );
+        if (bookmarksBarNode) {
+          parentId = bookmarksBarNode.id;
+        }
       }
+      rootFolder = await createFolder(parentId, 'RaindropSync');
     }
 
-    const raindropSyncFolder = await chrome.bookmarks.create({
-      parentId: parentId,
-      title: 'RaindropSync',
-    });
+    await syncCollections(token, rootFolder.id);
+    await syncRaindrops(token, rootFolder.id);
 
-    // Step 3e: Create collection folder structure
-    const collectionToFolderMap = await createCollectionFolderStructure(
-      raindropSyncFolder.id,
-      collectionTree,
+    await setLastSyncTimestamp(Date.now());
+
+    cleanupBackupProcess();
+    sendStatusUpdate('Incremental sync completed successfully!', 'success');
+    showNotification(
+      'Raindrop Sync Complete',
+      'Your bookmarks are now up to date.',
+      'sync-complete',
     );
-
-    // Step 3f: Fetch and create bookmarks using paginated API
-    sendStatusUpdate(
-      'Fetching and creating bookmarks...',
-      'info',
-      'fetching_raindrops',
-    );
-
-    let totalBookmarksCreated = 0;
-    let totalBookmarksSkipped = 0;
-    let totalBookmarksErrors = 0;
-
-    // Create callback function to process each page of raindrops
-    const processPageCallback = async (
-      raindrops,
-      pageNumber,
-      totalProcessed,
-    ) => {
-      sendStatusUpdate(
-        `Processing page ${pageNumber + 1}: ${raindrops.length} raindrops (${
-          totalProcessed + raindrops.length
-        } total)...`,
-        'info',
-        'processing_raindrops',
-      );
-
-      // Process this page and create bookmarks
-      const pageResult = await processRaindropsPage(
-        raindrops,
-        collectionToFolderMap,
-        undefined,
-      );
-
-      // Update totals
-      totalBookmarksCreated += pageResult.successCount;
-      totalBookmarksSkipped += pageResult.skipCount;
-      totalBookmarksErrors += pageResult.errorCount;
-
-      return pageResult;
-    };
-
-    // Fetch all raindrops page by page and create bookmarks
-    const fetchResult = await fetchRaindropsPaginated(
-      token,
-      processPageCallback,
-      {}, // Use default options
-    );
-
-    sendStatusUpdate(
-      `Bookmark creation completed: ${totalBookmarksCreated} created, ${totalBookmarksSkipped} skipped, ${totalBookmarksErrors} errors`,
-      totalBookmarksErrors > 0 ? 'warning' : 'success',
-      'completed_bookmarks',
-    );
-
-    if (fetchResult.success && totalBookmarksCreated > 0) {
-      // Save both the import time and the latest change timestamp
-      await chrome.storage.sync.set({
-        lastImportTime: Date.now(),
-        lastProcessedChangeDate: syncCheck.latestChangeTimestamp,
-      });
-
-      // Get the actual import time that was saved during sync
-      const result = await chrome.storage.sync.get(['lastImportTime']);
-      const actualImportTime = result.lastImportTime || Date.now();
-
-      // Send a specific message to refresh timestamps immediately
-      try {
-        chrome.runtime.sendMessage({
-          action: 'refreshTimestamps',
-          lastBackupTime: syncCheck.latestChangeTimestamp,
-          lastImportTime: actualImportTime,
-        });
-      } catch (error) {
-        console.log('Could not send refresh timestamps message:', error);
-      }
-
-      cleanupBackupProcess();
-      sendStatusUpdate(
-        `Sync completed successfully! Created ${totalBookmarksCreated} bookmarks from ${fetchResult.totalPages} pages.`,
-        'success',
-        'completed',
-      );
-      showNotification(
-        'Raindrop Sync Complete',
-        `Successfully synced ${totalBookmarksCreated} raindrops to your browser bookmarks.`,
-        'sync-complete',
-      );
-      return { success: true, message: 'Sync completed successfully' };
-    } else {
-      cleanupBackupProcess();
-      const errorMessage =
-        totalBookmarksCreated === 0
-          ? 'No bookmarks were created - check your Raindrop collections'
-          : `Partial sync: ${totalBookmarksCreated} bookmarks created with ${totalBookmarksErrors} errors`;
-      sendStatusUpdate(errorMessage, 'error', 'failed');
-      return { success: false, message: errorMessage };
-    }
+    return { success: true, message: 'Sync completed successfully' };
   } catch (error) {
     console.error('Sync process error:', error);
     cleanupBackupProcess();
