@@ -4,5 +4,4 @@ package.json export-ignore
 package-lock.json export-ignore
 /.github export-ignore
 /docs export-ignore
-/icons export-ignore
 /node_modules export-ignore
