@@ -281,6 +281,9 @@ async function startBackupProcess(token) {
     let totalBookmarksSkipped = 0;
     let totalBookmarksErrors = 0;
 
+    // Keep track of the index for each folder to preserve order
+    const folderIndexMap = new Map();
+
     // Create callback function to process each page of raindrops
     const processPageCallback = async (
       raindrops,
@@ -300,6 +303,7 @@ async function startBackupProcess(token) {
         raindrops,
         collectionToFolderMap,
         undefined,
+        folderIndexMap,
       );
 
       // Update totals
