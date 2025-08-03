@@ -48,6 +48,20 @@ document.addEventListener('DOMContentLoaded', function () {
     return;
   }
 
+  // Check for query params and highlight if necessary
+  const urlParams = new URLSearchParams(window.location.search);
+  const reason = urlParams.get('reason');
+  if (reason === 'install' || reason === 'missing_token') {
+    const apiTokenGroup = apiTokenInput.closest('.form-group');
+    if (apiTokenGroup) {
+      apiTokenGroup.classList.add('highlight');
+      // Focus after a short delay to ensure the page is fully rendered
+      setTimeout(() => apiTokenInput.focus(), 100);
+    }
+    // Show a helpful message
+    showStatus('Please enter your API token to get started.', 'info');
+  }
+
   // Load saved token when page loads
   loadSavedToken();
 
@@ -186,6 +200,12 @@ document.addEventListener('DOMContentLoaded', function () {
         );
         saveTokenAfterValidation(token);
         updateControlsDisabledState(false); // Enable buttons after successful validation
+
+        // Remove highlight after successful validation
+        const apiTokenGroup = apiTokenInput.closest('.form-group');
+        if (apiTokenGroup) {
+          apiTokenGroup.classList.remove('highlight');
+        }
       } else {
         showStatus(
           `Token is invalid: ${response.status} ${response.statusText}`,

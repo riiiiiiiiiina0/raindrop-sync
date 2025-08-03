@@ -571,3 +571,22 @@ h3 {
     min-width: auto;
   }
 }
+
+/* Highlighting for form groups that need attention */
+.form-group.highlight {
+  border-radius: 8px;
+  padding: 12px;
+  margin: -12px;
+  /* Add a transition for a subtle effect */
+  transition: background-color 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+}
+
+[data-theme='light'] .form-group.highlight {
+  background-color: #eef7ff;
+  box-shadow: 0 0 8px rgba(0, 119, 255, 0.2);
+}
+
+[data-theme='dark'] .form-group.highlight {
+  background-color: #2c2c3d;
+  box-shadow: 0 0 8px rgba(79, 98, 255, 0.3);
+}

@@ -820,12 +820,23 @@ async function findBookmarkBar() {
   throw new Error('Could not find bookmark bar');
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   console.log('Extension installed/enabled - initializing auto backup');
   // Initialize auto backup if enabled
   initializeAutoBackup();
   // Restore backup state from storage
   cleanup();
+
+  // On install or update, check for token and open options page if missing
+  if (details.reason === 'install' || details.reason === 'update') {
+    chrome.storage.sync.get('raindropToken', (result) => {
+      if (!result.raindropToken) {
+        const optionsUrl = chrome.runtime.getURL('src/options.html');
+        // Add a query parameter to indicate the reason for opening
+        chrome.tabs.create({ url: `${optionsUrl}?reason=install` });
+      }
+    });
+  }
 });
 
 chrome.runtime.onSuspend.addListener(async () => {
@@ -848,7 +859,8 @@ chrome.action.onClicked.addListener(async () => {
   );
 
   if (!raindropToken) {
-    chrome.runtime.openOptionsPage();
+    const optionsUrl = chrome.runtime.getURL('src/options.html');
+    chrome.tabs.create({ url: `${optionsUrl}?reason=missing_token` });
     return;
   }
 
