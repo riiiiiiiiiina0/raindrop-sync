@@ -185,6 +185,7 @@ export async function fetchRaindropsPaginated(token, onPageReceived, options) {
 export async function createBookmarkFromRaindrop(
   raindrop,
   collectionToFolderMap,
+  folderIndexMap,
 ) {
   try {
     // Get the collection ID from the raindrop
@@ -227,11 +228,16 @@ export async function createBookmarkFromRaindrop(
       return null;
     }
 
+    // Get the next index for this folder to ensure correct order
+    const index = folderIndexMap.get(folderId) || 0;
+    folderIndexMap.set(folderId, index + 1);
+
     // Create the bookmark
     const bookmark = await chrome.bookmarks.create({
       parentId: folderId,
       title: title,
       url: url,
+      index,
     });
 
     console.log(`Created bookmark: ${title} in collection ${collectionId}`);
@@ -256,6 +262,7 @@ export async function processRaindropsPage(
   raindrops,
   collectionToFolderMap,
   onProgress,
+  folderIndexMap,
 ) {
   let successCount = 0;
   let skipCount = 0;
@@ -268,6 +275,7 @@ export async function processRaindropsPage(
       const bookmark = await createBookmarkFromRaindrop(
         raindrop,
         collectionToFolderMap,
+        folderIndexMap,
       );
 
       if (bookmark) {
