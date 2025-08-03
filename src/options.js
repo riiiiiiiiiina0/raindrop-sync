@@ -200,6 +200,12 @@ document.addEventListener('DOMContentLoaded', function () {
         );
         saveTokenAfterValidation(token);
         updateControlsDisabledState(false); // Enable buttons after successful validation
+
+        // Remove highlight after successful validation
+        const apiTokenGroup = apiTokenInput.closest('.form-group');
+        if (apiTokenGroup) {
+          apiTokenGroup.classList.remove('highlight');
+        }
       } else {
         showStatus(
           `Token is invalid: ${response.status} ${response.statusText}`,
