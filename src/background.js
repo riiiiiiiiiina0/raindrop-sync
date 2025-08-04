@@ -612,8 +612,10 @@ async function saveCurrentTabsToRaindrop(token) {
     const tabs = await getTabsToSave();
 
     if (tabs.length === 0) {
-      showNotification('Raindrop Save', 'No tabs to save', 'save-no-tabs');
-      clearBadge();
+      showNotification('Raindrop Save', 'No valid tabs to save.', 'save-no-tabs');
+      sendStatusUpdate('No valid tabs found to save.', 'error', 'save_tabs');
+      setBadge('Error');
+      setTimeout(() => clearBadge(), 3000);
       return;
     }
 
@@ -633,23 +635,60 @@ async function saveCurrentTabsToRaindrop(token) {
 
     // Save to Raindrop
     const savedRaindrops = await addRaindrops(token, raindrops);
-    console.log(`Saved ${savedRaindrops.length} raindrops to Raindrop.io`);
-
-    // Save to local bookmarks under RaindropSync > Unsorted
-    await saveTabsToLocalBookmarks(tabs);
-
-    // Show success notification
-    const tabWord = tabs.length === 1 ? 'tab' : 'tabs';
-    showNotification(
-      'Raindrop Save Complete',
-      `Successfully saved ${tabs.length} ${tabWord} to Raindrop and bookmarks`,
-      'save-success',
+    console.log(
+      `Saved ${savedRaindrops.length} of ${tabs.length} raindrops to Raindrop.io`,
     );
-    sendStatusUpdate(
-      `Successfully saved ${tabs.length} ${tabWord}`,
-      'success',
-      'save_tabs',
-    );
+
+    if (savedRaindrops.length > 0) {
+      // Filter the original tabs to only include those that were successfully saved
+      const savedUrls = new Set(savedRaindrops.map((r) => r.link));
+      const successfullySavedTabs = tabs.filter((t) => savedUrls.has(t.url));
+
+      // Save to local bookmarks under RaindropSync > Unsorted
+      if (successfullySavedTabs.length > 0) {
+        await saveTabsToLocalBookmarks(successfullySavedTabs);
+      }
+
+      // Show success notification
+      const tabWord = successfullySavedTabs.length === 1 ? 'tab' : 'tabs';
+      showNotification(
+        'Raindrop Save Complete',
+        `Successfully saved ${successfullySavedTabs.length} ${tabWord} to Raindrop and bookmarks`,
+        'save-success',
+      );
+      sendStatusUpdate(
+        `Successfully saved ${successfullySavedTabs.length} ${tabWord}`,
+        'success',
+        'save_tabs',
+      );
+
+      if (savedRaindrops.length < tabs.length) {
+        // Partial success, show a notification but no error badge
+        const failedCount = tabs.length - savedRaindrops.length;
+        const failedTabWord = failedCount === 1 ? 'tab' : 'tabs';
+        showNotification(
+          'Raindrop Partial Save',
+          `Could not save ${failedCount} ${failedTabWord}.`,
+          'save-partial-error',
+        );
+      }
+
+      clearBadge();
+    } else {
+      // All tabs failed to save
+      showNotification(
+        'Raindrop Save Failed',
+        `Failed to save ${tabs.length} tab(s).`,
+        'save-error',
+      );
+      sendStatusUpdate(
+        `Failed to save ${tabs.length} tab(s).`,
+        'error',
+        'save_tabs',
+      );
+      setBadge('Error');
+      setTimeout(() => clearBadge(), 3000);
+    }
   } catch (error) {
     console.error('Error saving tabs to Raindrop:', error);
     showNotification(
@@ -662,8 +701,8 @@ async function saveCurrentTabsToRaindrop(token) {
       'error',
       'save_tabs',
     );
-  } finally {
-    clearBadge();
+    setBadge('Error');
+    setTimeout(() => clearBadge(), 3000);
   }
 }
 
