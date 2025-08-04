@@ -865,16 +865,15 @@ chrome.action.onClicked.addListener(async () => {
   }
 
   switch (actionButtonBehavior) {
-    case 'save':
-      await saveCurrentTabsToRaindrop(raindropToken);
-      break;
     case 'sync':
       startBackup();
       break;
     case 'open_options':
       chrome.runtime.openOptionsPage();
       break;
+    case 'save':
     default:
+      await saveCurrentTabsToRaindrop(raindropToken);
       break;
   }
 });
