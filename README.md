@@ -1,4 +1,4 @@
-# 💧🐻‍❄️ Raindrop Bear
+# 🐻‍❄️💧 Raindrop Bear
 
 **Let your bookmarks hibernate safely!**
 
