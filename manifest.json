@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Raindrop Sync",
+  "name": "Raindrop Bear",
   "version": "1.27.0",
-  "description": "Automatically syncs your Raindrop.io bookmarks to Chrome daily—no manual export required.",
+  "description": "Automatically sync your Raindrop.io bookmarks to your browser, keeping your digital forest tidy and organized.",
   "permissions": [
     "tabs",
     "bookmarks",
