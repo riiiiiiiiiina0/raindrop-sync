@@ -1,58 +1,77 @@
-# 💦 Raindrop Sync
+# 💧🐻‍❄️ Raindrop Bear
 
-A Chrome extension that **automatically syncs your [Raindrop.io](https://raindrop.io/) bookmarks to Chrome**—no manual export required.
+**Let your bookmarks hibernate safely!**
+
+---
+
+## 🐻 What is Raindrop Bear?
+
+**Raindrop Bear** is your friendly browser extension that automatically syncs your [Raindrop.io](https://raindrop.io/) bookmarks to your browser. No more lost links, no more messy folders—just a happy bear helping you keep your digital forest neat and tidy!
 
 ![](./docs/poster.jpeg)
 
 <a href="https://buymeacoffee.com/riiiiiiiiiina" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-blue.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
-## ⭐ Key Features
+---
 
-- **🔄 Automatic sync**: Your Raindrop.io bookmarks sync to Chrome every 15 minutes
-- **💾 Save tabs**: Click the extension icon to save current/highlighted tabs to both Raindrop and Chrome
-- **🎯 Configurable action**: Choose between saving tabs, triggering sync, or doing nothing
-- **🛡️ Background processing**: Syncs happen seamlessly without interrupting browsing
-- **📱 Real-time status**: Get notifications and visual feedback during sync
+## 🌳 Features
 
-## 🚀 Quick Start
-
-1. **Install** the extension from the Chrome Web Store
-2. **Get your API token** from [Raindrop.io Integrations](https://app.raindrop.io/settings/integrations)
-3. **Configure** the extension:
-   - Open extension options
-   - Enter your API token and test connection
-   - Choose your preferred action button behavior
-4. **Done!** Your bookmarks will sync automatically
-
-## 🔧 Configuration
-
-### Action Button Behavior
-
-- **💾 Save tab(s) to Raindrop** (default) - Saves to both Raindrop and local bookmarks
-- **🔄 Trigger manual sync** - Imports your latest Raindrop bookmarks
-- **⚪ Do nothing** - Automatic sync only
-
-### Settings
-
-- **Automatic sync**: Every 15 minutes when changes detected
-- **Manual sync**: Click button for immediate sync
-- **Notifications**: Toggle sync completion alerts
-
-## 📋 Requirements
-
-- Chrome browser
-- [Raindrop.io](https://raindrop.io/) account
-- API token from Raindrop integrations
-
-## 📝 Notes
-
-- Creates a "Raindrop" folder in Chrome bookmarks
-- Each sync replaces folder with fresh data
-- Saved tabs go to both Raindrop and local bookmarks
-- Large collections may take several minutes to sync
+- 💦 **Automatic Sync:** Raindrop Bear collects your Raindrop.io bookmarks every day—so you can nap, snack, or forage for berries while your links stay organized.
+- 🐾 **One-Click Save:** Click the bear! Instantly save the current tab to Raindrop and your browser bookmarks. Rawr!
+- 🐟 **Real-time Status:** Raindrop Bear gives you friendly feedback when syncing—no angry grizzlies here.
+- 🛡️ **Background Magic:** Syncing happens quietly in the woods (background), so you never lose your spot.
+- 📂 **Tidy Folders:** Everything is stored in a neat “RaindropSync” folder—no more bookmark chaos!
 
 ---
 
-**Transform your bookmark management with Raindrop Sync!**
+## 🍯 Quick Start
 
-_Made with ❤️ for the Raindrop.io community_
+1. **Install** Raindrop Bear from the [Chrome Web Store](https://chromewebstore.google.com/detail/raindrop-sync/gkcgbmlbjcdmnifhcmfgkafekaohjcof?authuser=0&hl=en).
+2. **Get your Raindrop.io API Token** from [here](https://app.raindrop.io/settings/integrations).
+3. **Open the extension options** (right-click the bear 🐻‍❄️, choose “Options”).
+4. **Paste your API token** and hit Save. Test the connection—if the bear smiles, you’re good!
+5. That’s it! Enjoy sweet, organized bookmarks with zero effort.
+
+---
+
+## 🧸 Why use Raindrop Bear?
+
+- Bears are great at remembering where they hide things (ask any squirrel).
+- No more manual exports—just automatic, daily bookmark naps.
+- The bear icon makes you smile every time you click it. Science probably agrees.
+
+---
+
+## 🚨 Permissions
+
+- **Browser bookmarks**: To tidy up your links.
+- **Raindrop.io API access**: To fetch and save your precious berries—uh, bookmarks.
+
+---
+
+## 🦦 FAQ
+
+**Q: Will Raindrop Bear eat my bookmarks?**
+A: Nope! Only honey and salmon.
+
+**Q: I have too many bookmarks!**
+A: That’s ok. Bears love a challenge. Raindrop Bear will keep syncing and sorting, no matter how big your stash.
+
+**Q: Can I manually sync?**
+A: Yes! Click the bear icon for instant action. Roar of approval optional.
+
+---
+
+## 💌 Feedback
+
+If you spot a bug, have a feature idea, or just want to share bear memes, open an issue. The bear will read every message (slowly, with big paws).
+
+---
+
+## 📜 License
+
+MIT — because even bears believe in sharing.
+
+---
+
+_May your bookmarks stay cozy and your links never wander off. Happy browsing!_
