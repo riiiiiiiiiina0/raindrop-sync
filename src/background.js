@@ -109,22 +109,42 @@ function sendStatusUpdate(status, type, step) {
 // Check if sync is needed by comparing the latest change date with the last processed date
 async function checkIfSyncNeeded(token) {
   try {
-    // Check if local "Raindrop" bookmark folder exists
+    // Check if local "RaindropSync" bookmark folder exists and is non-empty
     const searchResults = await chrome.bookmarks.search({
       title: 'RaindropSync',
     });
-    const raindropFolderExists = searchResults.some(
-      (bookmark) => !bookmark.url,
-    ); // folder has no URL
+    const folderNodes = searchResults.filter((bookmark) => !bookmark.url); // folders have no URL
 
-    if (!raindropFolderExists) {
-      console.log('Local "Raindrop" bookmark folder not found - sync needed');
-      // Still get the latest change timestamp for proper tracking
+    // If there is no folder at all => sync needed
+    if (folderNodes.length === 0) {
+      console.log(
+        'Local "RaindropSync" bookmark folder not found – sync needed',
+      );
       const latestChangeTimestamp = await getLatestChange(token);
       return {
         syncNeeded: true,
         latestChangeTimestamp: latestChangeTimestamp || Date.now(),
         reason: 'missing_local_folder',
+      };
+    }
+
+    // Determine if at least one folder has any children
+    const childrenArrays = await Promise.all(
+      folderNodes.map((folder) => chrome.bookmarks.getChildren(folder.id)),
+    );
+    const hasNonEmptyFolder = childrenArrays.some(
+      (children) => children.length > 0,
+    );
+
+    if (!hasNonEmptyFolder) {
+      console.log(
+        'Local "RaindropSync" bookmark folder is empty – sync needed',
+      );
+      const latestChangeTimestamp = await getLatestChange(token);
+      return {
+        syncNeeded: true,
+        latestChangeTimestamp: latestChangeTimestamp || Date.now(),
+        reason: 'empty_local_folder',
       };
     }
 
@@ -612,7 +632,11 @@ async function saveCurrentTabsToRaindrop(token) {
     const tabs = await getTabsToSave();
 
     if (tabs.length === 0) {
-      showNotification('Raindrop Save', 'No valid tabs to save.', 'save-no-tabs');
+      showNotification(
+        'Raindrop Save',
+        'No valid tabs to save.',
+        'save-no-tabs',
+      );
       sendStatusUpdate('No valid tabs found to save.', 'error', 'save_tabs');
       setBadge('Error');
       setTimeout(() => clearBadge(), 3000);

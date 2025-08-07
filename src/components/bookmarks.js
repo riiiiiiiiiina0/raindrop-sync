@@ -11,8 +11,11 @@ export async function deleteExistingRaindropFolder() {
     const searchResults = await chrome.bookmarks.search({ title: 'Raindrop' });
 
     for (const bookmark of searchResults) {
-      // Check if this is a folder (no URL means it's a folder)
-      if (!bookmark.url) {
+      // Check if this is a folder (no URL) and it's at the top level (parentId 0/1/2/3)
+      if (
+        !bookmark.url &&
+        ['0', '1', '2', '3'].includes(bookmark.parentId ?? '')
+      ) {
         console.log(`Deleting existing Raindrop folder: ${bookmark.id}`);
         await chrome.bookmarks.removeTree(bookmark.id);
       }
@@ -38,8 +41,11 @@ export async function deleteExistingRaindropSyncFolder() {
     });
 
     for (const bookmark of searchResults) {
-      // Check if this is a folder (no URL means it's a folder)
-      if (!bookmark.url) {
+      // Check if this is a folder (no URL) and it's at the top level (parentId 0/1/2/3)
+      if (
+        !bookmark.url &&
+        ['0', '1', '2', '3'].includes(bookmark.parentId ?? '')
+      ) {
         console.log(`Deleting existing RaindropSync folder: ${bookmark.id}`);
         await chrome.bookmarks.removeTree(bookmark.id);
       }
