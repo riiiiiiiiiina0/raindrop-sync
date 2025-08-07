@@ -24,25 +24,33 @@ export async function deleteExistingRaindropFolder() {
 }
 
 /**
- * Deletes the existing "RaindropSync" folder from browser bookmarks.
- * This function searches for the folder by title and deletes it.
+ * Deletes all top-level "RaindropSync" folders from browser bookmarks.
+ * This function gets the bookmark tree and removes all root folders with that name.
  *
  * @async
  * @returns {Promise<void>}
  */
 export async function deleteExistingRaindropSyncFolder() {
   try {
-    // Search for existing RaindropSync folder
-    const searchResults = await chrome.bookmarks.search({
-      title: 'RaindropSync',
-    });
+    const bookmarkTree = await chrome.bookmarks.getTree();
+    const foldersToDelete = [];
 
-    for (const bookmark of searchResults) {
-      // Check if this is a folder (no URL means it's a folder)
-      if (!bookmark.url) {
-        console.log(`Deleting existing RaindropSync folder: ${bookmark.id}`);
-        await chrome.bookmarks.removeTree(bookmark.id);
+    // Traverse the root nodes of the bookmark tree
+    for (const rootNode of bookmarkTree) {
+      if (rootNode.children) {
+        for (const child of rootNode.children) {
+          // Check for top-level folders named "RaindropSync"
+          if (!child.url && child.title === 'RaindropSync') {
+            foldersToDelete.push(child.id);
+          }
+        }
       }
+    }
+
+    // Delete all found folders
+    for (const folderId of foldersToDelete) {
+      console.log(`Deleting existing RaindropSync folder: ${folderId}`);
+      await chrome.bookmarks.removeTree(folderId);
     }
   } catch (error) {
     console.error('Error deleting existing RaindropSync folder:', error);
