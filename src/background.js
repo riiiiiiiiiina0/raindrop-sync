@@ -241,32 +241,13 @@ async function startBackupProcess(token) {
       userData.groups || [],
     );
 
-    // Step 3d: Create RaindropSync folder in bookmarks bar
+    // Step 3d: Create collection folder structure (which now includes the root folder)
     sendStatusUpdate(
       'Creating RaindropSync folder structure...',
       'info',
       'creating_sync_folders',
     );
-    const bookmarksBar = await chrome.bookmarks.getTree();
-    let parentId = '1'; // Default to bookmarks bar
-
-    if (bookmarksBar && bookmarksBar[0] && bookmarksBar[0].children) {
-      const bookmarksBarNode = bookmarksBar[0].children.find(
-        (node) => node.id === '1',
-      );
-      if (bookmarksBarNode) {
-        parentId = bookmarksBarNode.id;
-      }
-    }
-
-    const raindropSyncFolder = await chrome.bookmarks.create({
-      parentId: parentId,
-      title: 'RaindropSync',
-    });
-
-    // Step 3e: Create collection folder structure
     const collectionToFolderMap = await createCollectionFolderStructure(
-      raindropSyncFolder.id,
       collectionTree,
     );
 

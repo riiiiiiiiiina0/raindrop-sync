@@ -67,53 +67,94 @@ export async function deleteExistingRaindropSyncFolder() {
  * @param {Array} collectionTree - The hierarchical collection tree structure.
  * @returns {Promise<Object>} Map of collection IDs to bookmark folder IDs.
  */
-export async function createCollectionFolderStructure(
-  parentId,
-  collectionTree,
-) {
+export async function createCollectionFolderStructure(collectionTree) {
   const collectionToFolderMap = new Map();
 
-  async function createFolderRecursive(parentFolderId, collections) {
-    // Collections are already sorted by the buildCollectionTree function
-    for (const collection of collections) {
-      try {
-        // Create folder for this collection
-        const folder = await chrome.bookmarks.create({
-          parentId: parentFolderId,
-          title: collection.title,
-        });
+  try {
+    // Find the bookmark bar
+    const bookmarksBar = await findBookmarkBar();
 
-        console.log(`Created collection folder: ${collection.title}`);
+    // Create the main "RaindropSync" folder
+    const raindropSyncFolder = await chrome.bookmarks.create({
+      parentId: bookmarksBar.id,
+      title: 'RaindropSync',
+    });
+    console.log('Created main RaindropSync folder');
 
-        // Map collection ID to folder ID for later use
-        // Special handling for the Unsorted folder
-        if (collection.id === 'unsorted') {
-          collectionToFolderMap.set('unsorted', folder.id);
-          // Also map ID 0 to unsorted folder (Raindrop uses collection ID 0 for unsorted)
-          collectionToFolderMap.set(0, folder.id);
-        } else {
-          collectionToFolderMap.set(collection.id, folder.id);
+    // Recursive function to create collection folders
+    async function createFolderRecursive(parentFolderId, collections) {
+      for (const collection of collections) {
+        try {
+          const folder = await chrome.bookmarks.create({
+            parentId: parentFolderId,
+            title: collection.title,
+          });
+          console.log(`Created collection folder: ${collection.title}`);
+
+          if (collection.id === 'unsorted') {
+            collectionToFolderMap.set('unsorted', folder.id);
+            collectionToFolderMap.set(0, folder.id);
+          } else {
+            collectionToFolderMap.set(collection.id, folder.id);
+          }
+
+          if (collection.children && collection.children.length > 0) {
+            await createFolderRecursive(folder.id, collection.children);
+          }
+        } catch (error) {
+          console.error(
+            `Error creating collection folder: ${collection.title}`,
+            error,
+          );
         }
-
-        // Recursively create children folders
-        if (collection.children && collection.children.length > 0) {
-          await createFolderRecursive(folder.id, collection.children);
-        }
-      } catch (error) {
-        console.error(
-          `Error creating collection folder: ${collection.title}`,
-          error,
-        );
-        // Continue with other collections even if one fails
       }
     }
+
+    // Start creating the folder structure from the collection tree
+    await createFolderRecursive(raindropSyncFolder.id, collectionTree);
+    console.log(
+      `Created ${collectionToFolderMap.size} collection folders.`,
+    );
+  } catch (error) {
+    console.error('Error creating collection folder structure:', error);
+    throw error; // Re-throw the error to be caught by the caller
   }
 
-  await createFolderRecursive(parentId, collectionTree);
-  console.log(
-    `Created ${collectionToFolderMap.size} collection folders with proper sorting`,
-  );
   return collectionToFolderMap;
+}
+
+/**
+ * Finds the bookmark bar folder.
+ * @returns {Promise<Object>} The bookmark bar folder object
+ */
+async function findBookmarkBar() {
+  const bookmarkTree = await chrome.bookmarks.getTree();
+  const rootNode = bookmarkTree[0];
+
+  if (rootNode.children) {
+    // Look for a folder named "Bookmarks bar" or "Bookmarks Bar"
+    const bar = rootNode.children.find(
+      (child) =>
+        !child.url &&
+        (child.title === 'Bookmarks bar' || child.title === 'Bookmarks Bar'),
+    );
+    if (bar) return bar;
+
+    // Fallback: return the first folder that is not 'Other Bookmarks' or 'Mobile Bookmarks'
+    const fallback = rootNode.children.find(
+      (child) =>
+        !child.url &&
+        child.title !== 'Other Bookmarks' &&
+        child.title !== 'Mobile Bookmarks',
+    );
+    if (fallback) return fallback;
+
+    // Final fallback: return the first folder
+    const firstFolder = rootNode.children.find((child) => !child.url);
+    if (firstFolder) return firstFolder;
+  }
+
+  throw new Error('Could not find the bookmark bar.');
 }
 
 /**
