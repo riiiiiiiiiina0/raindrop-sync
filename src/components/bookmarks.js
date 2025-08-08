@@ -57,6 +57,103 @@ export async function deleteExistingRaindropSyncFolder() {
 }
 
 /**
+ * Finds a child folder with given title under parent or creates it if missing.
+ * Returns the folder node.
+ */
+export async function findOrCreateFolderByTitle(parentId, title) {
+  // Look for existing child folder with exact title
+  const children = await chrome.bookmarks.getChildren(parentId);
+  const existing = children.find((n) => !n.url && n.title === title);
+  if (existing) return existing;
+  // Create new folder if not found
+  return await chrome.bookmarks.create({ parentId, title });
+}
+
+/**
+ * Ensures the collection/group folder structure exists under parent, creating
+ * only what is missing and reusing existing nodes by title. Returns a
+ * Map of collectionId (or 'unsorted') to folderId for quick lookup.
+ * Accepts tree produced by buildCollectionTreeWithGroups.
+ */
+export async function ensureCollectionFolderStructure(parentId, collectionTree) {
+  const collectionToFolderMap = new Map();
+
+  // Load existing mapping from storage to keep stable folder IDs across renames
+  const stored = await chrome.storage.local.get(['collectionFolderMap']);
+  /** @type {Record<string,string>} */
+  const idToFolderId = stored.collectionFolderMap || {};
+
+  async function ensureNodeFolder(currentParentId, node) {
+    // Try by stored mapping first when node represents a real collection (not group)
+    let folder = null;
+    if (!node.isGroup && node.id != null) {
+      const key = String(node.id);
+      const mappedId = idToFolderId[key];
+      if (mappedId) {
+        try {
+          const result = await chrome.bookmarks.get(mappedId);
+          if (result && result.length > 0 && !result[0].url) {
+            folder = result[0];
+            // Ensure it is under correct parent; if not, move it
+            if (folder.parentId !== currentParentId) {
+              folder = await chrome.bookmarks.move(folder.id, {
+                parentId: currentParentId,
+              });
+            }
+            // Update title if renamed in Raindrop
+            if (folder.title !== node.title) {
+              await chrome.bookmarks.update(folder.id, { title: node.title });
+              folder.title = node.title;
+            }
+          }
+        } catch (e) {
+          // If get fails (deleted), we will create anew
+        }
+      }
+    }
+
+    if (!folder) {
+      // Fallback: find or create by title under current parent
+      folder = await findOrCreateFolderByTitle(currentParentId, node.title);
+    }
+
+    // Remember mapping for future runs
+    if (node.id != null && !node.isGroup) {
+      idToFolderId[String(node.id)] = folder.id;
+    }
+
+    // Map collection IDs to folder IDs for this run
+    if (node.id === 'unsorted') {
+      collectionToFolderMap.set('unsorted', folder.id);
+      collectionToFolderMap.set(0, folder.id);
+    } else if (!node.isGroup && node.id != null) {
+      collectionToFolderMap.set(node.id, folder.id);
+    }
+
+    return folder;
+  }
+
+  async function ensureRecursive(currentParentId, nodes) {
+    for (const node of nodes) {
+      try {
+        const folder = await ensureNodeFolder(currentParentId, node);
+        if (node.children && node.children.length > 0) {
+          await ensureRecursive(folder.id, node.children);
+        }
+      } catch (error) {
+        console.error(`Error ensuring folder for: ${node.title}`, error);
+        // Continue with others even if one fails
+      }
+    }
+  }
+
+  await ensureRecursive(parentId, collectionTree);
+  // Persist updated mapping
+  await chrome.storage.local.set({ collectionFolderMap: idToFolderId });
+  return collectionToFolderMap;
+}
+
+/**
  * Creates bookmark folder structure from collection tree.
  * This function creates a hierarchical folder structure based on Raindrop collections.
  *
