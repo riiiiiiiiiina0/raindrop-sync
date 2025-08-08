@@ -12,12 +12,16 @@ import {
   fetchRaindropsPaginated,
   createBookmarkFromRaindrop,
   processRaindropsPage,
+  fetchRaindropsSince,
+  fetchDeletedSince,
 } from './components/raindrop.js';
 import {
   deleteExistingRaindropFolder,
   createBookmarksFromStructure,
   deleteExistingRaindropSyncFolder,
   createCollectionFolderStructure,
+  findOrCreateFolderByTitle,
+  ensureCollectionFolderStructure,
 } from './components/bookmarks.js';
 
 console.log('Raindrop Sync background service worker started');
@@ -233,14 +237,12 @@ async function startBackupProcess(token) {
 
     sendStatusUpdate(statusMessage, 'info', 'preparing');
 
-    // Step 3a: Delete existing bookmark folders
+    // Step 3a: Prepare or create the root RaindropSync folder (no full deletion)
     sendStatusUpdate(
-      'Deleting existing bookmark folders...',
+      'Ensuring bookmark folders...',
       'info',
-      'deleting_folders',
+      'ensuring_folders',
     );
-    await deleteExistingRaindropFolder(); // Delete old "Raindrop" folder
-    await deleteExistingRaindropSyncFolder(); // Delete existing "RaindropSync" folder
 
     // Step 3b: Fetch user data with groups and collection structure from Raindrop API
     sendStatusUpdate(
@@ -261,93 +263,241 @@ async function startBackupProcess(token) {
       userData.groups || [],
     );
 
-    // Step 3d: Create RaindropSync folder in bookmarks bar
+    // Step 3d: Find or create RaindropSync folder in bookmarks bar
     sendStatusUpdate(
-      'Creating RaindropSync folder structure...',
+      'Ensuring RaindropSync folder structure...',
       'info',
       'creating_sync_folders',
     );
-    const bookmarksBar = await chrome.bookmarks.getTree();
-    let parentId = '1'; // Default to bookmarks bar
+    const bookmarksTree = await chrome.bookmarks.getTree();
+    const root = bookmarksTree?.[0];
+    const bar =
+      root?.children?.find((n) => n.id === '1') || root?.children?.[0];
+    const barId = bar?.id || '1';
+    const raindropSyncFolder = await findOrCreateFolderByTitle(
+      barId,
+      'RaindropSync',
+    );
 
-    if (bookmarksBar && bookmarksBar[0] && bookmarksBar[0].children) {
-      const bookmarksBarNode = bookmarksBar[0].children.find(
-        (node) => node.id === '1',
-      );
-      if (bookmarksBarNode) {
-        parentId = bookmarksBarNode.id;
-      }
-    }
-
-    const raindropSyncFolder = await chrome.bookmarks.create({
-      parentId: parentId,
-      title: 'RaindropSync',
-    });
-
-    // Step 3e: Create collection folder structure
-    const collectionToFolderMap = await createCollectionFolderStructure(
+    // Step 3e: Ensure collection folder structure incrementally
+    const collectionToFolderMap = await ensureCollectionFolderStructure(
       raindropSyncFolder.id,
       collectionTree,
     );
 
-    // Step 3f: Fetch and create bookmarks using paginated API
-    sendStatusUpdate(
-      'Fetching and creating bookmarks...',
-      'info',
-      'fetching_raindrops',
-    );
+    // Step 3f: Fetch and merge
+    const isInitialSync =
+      syncCheck.reason === 'missing_local_folder' ||
+      syncCheck.reason === 'empty_local_folder';
+
+    if (isInitialSync) {
+      sendStatusUpdate(
+        'Fetching all raindrops for initial sync...',
+        'info',
+        'fetching_raindrops',
+      );
+    } else {
+      sendStatusUpdate(
+        'Fetching incremental changes...',
+        'info',
+        'fetching_raindrops',
+      );
+    }
 
     let totalBookmarksCreated = 0;
+    let totalBookmarksUpdated = 0;
     let totalBookmarksSkipped = 0;
     let totalBookmarksErrors = 0;
 
-    // Keep track of the index for each folder to preserve order
-    const folderIndexMap = new Map();
+    // Load and maintain raindropId -> bookmarkId mapping to avoid URL-wide searches
+    const storedMaps = await chrome.storage.local.get([
+      'raindropIdToBookmarkId',
+    ]);
+    /** @type {Record<string,string>} */
+    const raindropIdToBookmarkId = storedMaps.raindropIdToBookmarkId || {};
 
-    // Create callback function to process each page of raindrops
-    const processPageCallback = async (
-      raindrops,
-      pageNumber,
-      totalProcessed,
-    ) => {
-      sendStatusUpdate(
-        `Processing page ${pageNumber + 1}: ${raindrops.length} raindrops (${
-          totalProcessed + raindrops.length
-        } total)...`,
-        'info',
-        'processing_raindrops',
+    // Helper to upsert a single raindrop into local bookmarks
+    async function upsertRaindrop(raindrop) {
+      try {
+        const collectionId = raindrop.collection?.$id ?? 0;
+        let targetFolderId = collectionToFolderMap.get(collectionId);
+        if (!targetFolderId && collectionId === -1) {
+          targetFolderId =
+            collectionToFolderMap.get('unsorted') ||
+            collectionToFolderMap.get(0);
+        }
+        if (!targetFolderId) {
+          // Collection not represented locally; skip
+          totalBookmarksSkipped += 1;
+          return;
+        }
+
+        const url = raindrop.link;
+        if (
+          !url ||
+          (!url.startsWith('http://') && !url.startsWith('https://'))
+        ) {
+          totalBookmarksSkipped += 1;
+          return;
+        }
+
+        const title = (raindrop.title || 'Untitled').slice(0, 1000);
+
+        // Prefer direct mapping by raindrop id if exists
+        let foundNode = null;
+        let foundFolderId = null;
+        const mapKey = String(raindrop._id ?? '');
+        const mappedBookmarkId = mapKey
+          ? raindropIdToBookmarkId[mapKey]
+          : undefined;
+        if (mappedBookmarkId) {
+          try {
+            const got = await chrome.bookmarks.get(mappedBookmarkId);
+            if (got && got.length > 0) {
+              foundNode = got[0];
+              foundFolderId = got[0].parentId;
+            }
+          } catch (_) {
+            // mapping stale
+          }
+        }
+        // If still not found, search within mapped folders by URL
+        if (!foundNode) {
+          for (const folderId of new Set(collectionToFolderMap.values())) {
+            const children = await chrome.bookmarks.getChildren(folderId);
+            const hit = children.find((n) => n.url === url);
+            if (hit) {
+              foundNode = hit;
+              foundFolderId = folderId;
+              break;
+            }
+          }
+        }
+
+        if (foundNode) {
+          // If it's in a different folder, move it
+          if (foundFolderId !== targetFolderId) {
+            await chrome.bookmarks.move(foundNode.id, {
+              parentId: targetFolderId,
+            });
+          }
+          // Update title if changed
+          if (foundNode.title !== title) {
+            await chrome.bookmarks.update(foundNode.id, { title });
+            totalBookmarksUpdated += 1;
+          } else if (foundFolderId !== targetFolderId) {
+            totalBookmarksUpdated += 1;
+          } else {
+            totalBookmarksSkipped += 1;
+          }
+          // Refresh mapping
+          if (mapKey) raindropIdToBookmarkId[mapKey] = foundNode.id;
+        } else {
+          const created = await chrome.bookmarks.create({
+            parentId: targetFolderId,
+            title,
+            url,
+          });
+          totalBookmarksCreated += 1;
+          if (mapKey) raindropIdToBookmarkId[mapKey] = created.id;
+        }
+      } catch (e) {
+        console.error('Upsert error', e, raindrop);
+        totalBookmarksErrors += 1;
+      }
+    }
+
+    // Process additions/updates
+    // For initial sync, process all pages; otherwise only since lastProcessedDate
+    const lastProcessedDate =
+      (await chrome.storage.sync.get(['lastProcessedChangeDate']))
+        .lastProcessedChangeDate || 0;
+
+    if (isInitialSync) {
+      // Full import using paginated fetch of all items (still streaming pages to reduce memory)
+      await fetchRaindropsPaginated(
+        token,
+        async (items, pageNumber) => {
+          sendStatusUpdate(
+            `Creating page ${pageNumber + 1}: ${items.length} raindrops...`,
+            'info',
+            'processing_raindrops',
+          );
+          for (const r of items) {
+            await upsertRaindrop(r);
+          }
+        },
+        { collectionId: 0, perPage: 50, nested: true, sort: '-created' },
+      );
+    } else {
+      await fetchRaindropsSince(
+        token,
+        lastProcessedDate,
+        async (items, pageNumber) => {
+          sendStatusUpdate(
+            `Merging page ${pageNumber + 1}: ${
+              items.length
+            } changed raindrops...`,
+            'info',
+            'processing_raindrops',
+          );
+          for (const r of items) {
+            await upsertRaindrop(r);
+          }
+        },
+        { perPage: 50 },
       );
 
-      // Process this page and create bookmarks
-      const pageResult = await processRaindropsPage(
-        raindrops,
-        collectionToFolderMap,
-        undefined,
-        folderIndexMap,
+      // Process deletions since lastProcessedDate by checking Trash
+      await fetchDeletedSince(
+        token,
+        lastProcessedDate,
+        async (deletedItems) => {
+          // Remove by id mapping primarily; fallback by URL if mapping missing
+          for (const d of deletedItems) {
+            const mapKey = String(d._id ?? '');
+            const mapped = mapKey ? raindropIdToBookmarkId[mapKey] : undefined;
+            if (mapped) {
+              try {
+                await chrome.bookmarks.remove(mapped);
+                delete raindropIdToBookmarkId[mapKey];
+                continue;
+              } catch (_) {
+                // fall back to URL
+              }
+            }
+            if (d.link) {
+              const folders = Array.from(
+                new Set(collectionToFolderMap.values()),
+              );
+              for (const folderId of folders) {
+                const children = await chrome.bookmarks.getChildren(folderId);
+                const hit = children.find((n) => n.url === d.link);
+                if (hit) {
+                  try {
+                    await chrome.bookmarks.remove(hit.id);
+                  } catch (_) {}
+                }
+              }
+            }
+          }
+        },
+        { perPage: 50 },
       );
-
-      // Update totals
-      totalBookmarksCreated += pageResult.successCount;
-      totalBookmarksSkipped += pageResult.skipCount;
-      totalBookmarksErrors += pageResult.errorCount;
-
-      return pageResult;
-    };
-
-    // Fetch all raindrops page by page and create bookmarks
-    const fetchResult = await fetchRaindropsPaginated(
-      token,
-      processPageCallback,
-      {}, // Use default options
-    );
+    }
 
     sendStatusUpdate(
-      `Bookmark creation completed: ${totalBookmarksCreated} created, ${totalBookmarksSkipped} skipped, ${totalBookmarksErrors} errors`,
+      `Merge completed: ${totalBookmarksCreated} created, ${totalBookmarksUpdated} updated, ${totalBookmarksSkipped} skipped, ${totalBookmarksErrors} errors`,
       totalBookmarksErrors > 0 ? 'warning' : 'success',
       'completed_bookmarks',
     );
 
-    if (fetchResult.success && totalBookmarksCreated > 0) {
+    // Persist mappings
+    await chrome.storage.local.set({ raindropIdToBookmarkId });
+
+    // Consider success even if zero changes; we still updated timestamps
+    const fetchResult = { success: true, totalPages: 0 };
+    if (fetchResult.success) {
       // Save both the import time and the latest change timestamp
       await chrome.storage.sync.set({
         lastImportTime: Date.now(),
@@ -370,11 +520,7 @@ async function startBackupProcess(token) {
       }
 
       cleanupBackupProcess();
-      sendStatusUpdate(
-        `Sync completed successfully! Created ${totalBookmarksCreated} bookmarks from ${fetchResult.totalPages} pages.`,
-        'success',
-        'completed',
-      );
+      sendStatusUpdate(`Sync completed successfully!`, 'success', 'completed');
       showNotification(
         'Raindrop Sync Complete',
         `Successfully synced ${totalBookmarksCreated} raindrops to your browser bookmarks.`,

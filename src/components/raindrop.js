@@ -170,6 +170,121 @@ export async function fetchRaindropsPaginated(token, onPageReceived, options) {
 }
 
 /**
+ * Fetch raindrops updated since a timestamp (ms) using search by lastUpdate.
+ * Stops automatically when results are older than the cutoff to minimize API calls.
+ */
+export async function fetchRaindropsSince(token, sinceMs, onPageReceived, options) {
+  const defaultOptions = { perPage: 50 };
+  const finalOptions = { ...defaultOptions, ...(options || {}) };
+  const perPage = finalOptions.perPage;
+
+  let page = 0;
+  let totalFetched = 0;
+  const base = `https://api.raindrop.io/rest/v1/raindrops/0`;
+
+  while (true) {
+    const url = new URL(base);
+    url.searchParams.set('page', page.toString());
+    url.searchParams.set('perpage', perPage.toString());
+    url.searchParams.set('nested', 'true');
+    url.searchParams.set('sort', '-lastUpdate');
+
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch raindrops since: ${res.status}`);
+    }
+    const data = await res.json();
+    const items = (data.items || []);
+
+    if (items.length === 0) break;
+
+    // Filter only items newer than sinceMs
+    const newer = items.filter((it) => {
+      const t = it.lastUpdate ? Date.parse(it.lastUpdate) : 0;
+      return t > sinceMs;
+    });
+
+    if (newer.length > 0) {
+      await onPageReceived(newer, page, totalFetched);
+      totalFetched += newer.length;
+    }
+
+    // If the last item on this page is older/equal than cutoff, we can stop
+    const oldestOnPage = items[items.length - 1];
+    const oldestTs = oldestOnPage?.lastUpdate ? Date.parse(oldestOnPage.lastUpdate) : 0;
+    if (oldestTs <= sinceMs) break;
+
+    if (items.length < perPage) break; // no more pages
+    page += 1;
+    if (page > 200) break; // safety
+  }
+
+  return { success: true, totalFetched, totalPages: page + 1 };
+}
+
+/**
+ * Fetch recently deleted raindrops (from Trash) since a timestamp by lastUpdate.
+ * Returns ids for local deletion handling.
+ */
+export async function fetchDeletedSince(token, sinceMs, onPageReceived, options) {
+  const defaultOptions = { perPage: 50 };
+  const finalOptions = { ...defaultOptions, ...(options || {}) };
+  const perPage = finalOptions.perPage;
+
+  let page = 0;
+  let totalFetched = 0;
+  const base = `https://api.raindrop.io/rest/v1/raindrops/-99`;
+
+  while (true) {
+    const url = new URL(base);
+    url.searchParams.set('page', page.toString());
+    url.searchParams.set('perpage', perPage.toString());
+    url.searchParams.set('sort', '-lastUpdate');
+
+    const res = await fetch(url.toString(), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`Failed to fetch deleted: ${res.status}`);
+    }
+    const data = await res.json();
+    const items = (data.items || []);
+
+    if (items.length === 0) break;
+
+    const newer = items.filter((it) => {
+      const t = it.lastUpdate ? Date.parse(it.lastUpdate) : 0;
+      return t > sinceMs;
+    });
+
+    if (newer.length > 0) {
+      await onPageReceived(newer, page, totalFetched);
+      totalFetched += newer.length;
+    }
+
+    const oldestOnPage = items[items.length - 1];
+    const oldestTs = oldestOnPage?.lastUpdate ? Date.parse(oldestOnPage.lastUpdate) : 0;
+    if (oldestTs <= sinceMs) break;
+
+    if (items.length < perPage) break;
+    page += 1;
+    if (page > 200) break;
+  }
+
+  return { success: true, totalFetched, totalPages: page + 1 };
+}
+
+/**
  * Creates a browser bookmark from a raindrop object.
  * This function creates a bookmark in the appropriate folder based on the raindrop's collection ID.
  * For collection handling:
