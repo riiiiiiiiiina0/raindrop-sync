@@ -271,7 +271,8 @@ async function startBackupProcess(token) {
     );
     const bookmarksTree = await chrome.bookmarks.getTree();
     const root = bookmarksTree?.[0];
-    const bar = root?.children?.find((n) => n.id === '1') || root?.children?.[0];
+    const bar =
+      root?.children?.find((n) => n.id === '1') || root?.children?.[0];
     const barId = bar?.id || '1';
     const raindropSyncFolder = await findOrCreateFolderByTitle(
       barId,
@@ -309,7 +310,9 @@ async function startBackupProcess(token) {
     let totalBookmarksErrors = 0;
 
     // Load and maintain raindropId -> bookmarkId mapping to avoid URL-wide searches
-    const storedMaps = await chrome.storage.local.get(['raindropIdToBookmarkId']);
+    const storedMaps = await chrome.storage.local.get([
+      'raindropIdToBookmarkId',
+    ]);
     /** @type {Record<string,string>} */
     const raindropIdToBookmarkId = storedMaps.raindropIdToBookmarkId || {};
 
@@ -319,7 +322,9 @@ async function startBackupProcess(token) {
         const collectionId = raindrop.collection?.$id ?? 0;
         let targetFolderId = collectionToFolderMap.get(collectionId);
         if (!targetFolderId && collectionId === -1) {
-          targetFolderId = collectionToFolderMap.get('unsorted') || collectionToFolderMap.get(0);
+          targetFolderId =
+            collectionToFolderMap.get('unsorted') ||
+            collectionToFolderMap.get(0);
         }
         if (!targetFolderId) {
           // Collection not represented locally; skip
@@ -328,7 +333,10 @@ async function startBackupProcess(token) {
         }
 
         const url = raindrop.link;
-        if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+        if (
+          !url ||
+          (!url.startsWith('http://') && !url.startsWith('https://'))
+        ) {
           totalBookmarksSkipped += 1;
           return;
         }
@@ -339,7 +347,9 @@ async function startBackupProcess(token) {
         let foundNode = null;
         let foundFolderId = null;
         const mapKey = String(raindrop._id ?? '');
-        const mappedBookmarkId = mapKey ? raindropIdToBookmarkId[mapKey] : undefined;
+        const mappedBookmarkId = mapKey
+          ? raindropIdToBookmarkId[mapKey]
+          : undefined;
         if (mappedBookmarkId) {
           try {
             const got = await chrome.bookmarks.get(mappedBookmarkId);
@@ -367,7 +377,9 @@ async function startBackupProcess(token) {
         if (foundNode) {
           // If it's in a different folder, move it
           if (foundFolderId !== targetFolderId) {
-            await chrome.bookmarks.move(foundNode.id, { parentId: targetFolderId });
+            await chrome.bookmarks.move(foundNode.id, {
+              parentId: targetFolderId,
+            });
           }
           // Update title if changed
           if (foundNode.title !== title) {
@@ -381,7 +393,11 @@ async function startBackupProcess(token) {
           // Refresh mapping
           if (mapKey) raindropIdToBookmarkId[mapKey] = foundNode.id;
         } else {
-          const created = await chrome.bookmarks.create({ parentId: targetFolderId, title, url });
+          const created = await chrome.bookmarks.create({
+            parentId: targetFolderId,
+            title,
+            url,
+          });
           totalBookmarksCreated += 1;
           if (mapKey) raindropIdToBookmarkId[mapKey] = created.id;
         }
@@ -393,7 +409,9 @@ async function startBackupProcess(token) {
 
     // Process additions/updates
     // For initial sync, process all pages; otherwise only since lastProcessedDate
-    const lastProcessedDate = (await chrome.storage.sync.get(['lastProcessedChangeDate'])).lastProcessedChangeDate || 0;
+    const lastProcessedDate =
+      (await chrome.storage.sync.get(['lastProcessedChangeDate']))
+        .lastProcessedChangeDate || 0;
 
     if (isInitialSync) {
       // Full import using paginated fetch of all items (still streaming pages to reduce memory)
@@ -417,7 +435,9 @@ async function startBackupProcess(token) {
         lastProcessedDate,
         async (items, pageNumber) => {
           sendStatusUpdate(
-            `Merging page ${pageNumber + 1}: ${items.length} changed raindrops...`,
+            `Merging page ${pageNumber + 1}: ${
+              items.length
+            } changed raindrops...`,
             'info',
             'processing_raindrops',
           );
@@ -447,7 +467,9 @@ async function startBackupProcess(token) {
               }
             }
             if (d.link) {
-              const folders = Array.from(new Set(collectionToFolderMap.values()));
+              const folders = Array.from(
+                new Set(collectionToFolderMap.values()),
+              );
               for (const folderId of folders) {
                 const children = await chrome.bookmarks.getChildren(folderId);
                 const hit = children.find((n) => n.url === d.link);
@@ -498,11 +520,7 @@ async function startBackupProcess(token) {
       }
 
       cleanupBackupProcess();
-      sendStatusUpdate(
-        `Sync completed successfully! Created ${totalBookmarksCreated} bookmarks from ${fetchResult.totalPages} pages.`,
-        'success',
-        'completed',
-      );
+      sendStatusUpdate(`Sync completed successfully!`, 'success', 'completed');
       showNotification(
         'Raindrop Sync Complete',
         `Successfully synced ${totalBookmarksCreated} raindrops to your browser bookmarks.`,
