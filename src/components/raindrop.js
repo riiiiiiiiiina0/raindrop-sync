@@ -180,8 +180,6 @@ export async function fetchRaindropsSince(token, sinceMs, onPageReceived, option
 
   let page = 0;
   let totalFetched = 0;
-  const sinceIso = new Date(sinceMs).toISOString();
-  // Use sort by -lastUpdate to ensure early stop works
   const base = `https://api.raindrop.io/rest/v1/raindrops/0`;
 
   while (true) {
@@ -190,8 +188,6 @@ export async function fetchRaindropsSince(token, sinceMs, onPageReceived, option
     url.searchParams.set('perpage', perPage.toString());
     url.searchParams.set('nested', 'true');
     url.searchParams.set('sort', '-lastUpdate');
-    // Search supports operators like lastUpdate:>=ISO
-    url.searchParams.set('search', `lastUpdate:>=${sinceIso}`);
 
     const res = await fetch(url.toString(), {
       method: 'GET',
@@ -201,22 +197,32 @@ export async function fetchRaindropsSince(token, sinceMs, onPageReceived, option
       },
     });
     if (!res.ok) {
-      throw new Error(`Failed to fetch since ${sinceIso}: ${res.status}`);
+      throw new Error(`Failed to fetch raindrops since: ${res.status}`);
     }
     const data = await res.json();
-    const items = data.items || [];
+    const items = (data.items || []);
 
     if (items.length === 0) break;
 
-    await onPageReceived(items, page, totalFetched);
-    totalFetched += items.length;
+    // Filter only items newer than sinceMs
+    const newer = items.filter((it) => {
+      const t = it.lastUpdate ? Date.parse(it.lastUpdate) : 0;
+      return t > sinceMs;
+    });
 
-    // If fewer than perPage returned, no more pages
-    if (items.length < perPage) break;
+    if (newer.length > 0) {
+      await onPageReceived(newer, page, totalFetched);
+      totalFetched += newer.length;
+    }
+
+    // If the last item on this page is older/equal than cutoff, we can stop
+    const oldestOnPage = items[items.length - 1];
+    const oldestTs = oldestOnPage?.lastUpdate ? Date.parse(oldestOnPage.lastUpdate) : 0;
+    if (oldestTs <= sinceMs) break;
+
+    if (items.length < perPage) break; // no more pages
     page += 1;
-
-    // Safety stop
-    if (page > 200) break;
+    if (page > 200) break; // safety
   }
 
   return { success: true, totalFetched, totalPages: page + 1 };
@@ -233,7 +239,6 @@ export async function fetchDeletedSince(token, sinceMs, onPageReceived, options)
 
   let page = 0;
   let totalFetched = 0;
-  const sinceIso = new Date(sinceMs).toISOString();
   const base = `https://api.raindrop.io/rest/v1/raindrops/-99`;
 
   while (true) {
@@ -241,7 +246,6 @@ export async function fetchDeletedSince(token, sinceMs, onPageReceived, options)
     url.searchParams.set('page', page.toString());
     url.searchParams.set('perpage', perPage.toString());
     url.searchParams.set('sort', '-lastUpdate');
-    url.searchParams.set('search', `lastUpdate:>=${sinceIso}`);
 
     const res = await fetch(url.toString(), {
       method: 'GET',
@@ -251,15 +255,26 @@ export async function fetchDeletedSince(token, sinceMs, onPageReceived, options)
       },
     });
     if (!res.ok) {
-      throw new Error(`Failed to fetch deleted since ${sinceIso}: ${res.status}`);
+      throw new Error(`Failed to fetch deleted: ${res.status}`);
     }
     const data = await res.json();
-    const items = data.items || [];
+    const items = (data.items || []);
 
     if (items.length === 0) break;
 
-    await onPageReceived(items, page, totalFetched);
-    totalFetched += items.length;
+    const newer = items.filter((it) => {
+      const t = it.lastUpdate ? Date.parse(it.lastUpdate) : 0;
+      return t > sinceMs;
+    });
+
+    if (newer.length > 0) {
+      await onPageReceived(newer, page, totalFetched);
+      totalFetched += newer.length;
+    }
+
+    const oldestOnPage = items[items.length - 1];
+    const oldestTs = oldestOnPage?.lastUpdate ? Date.parse(oldestOnPage.lastUpdate) : 0;
+    if (oldestTs <= sinceMs) break;
 
     if (items.length < perPage) break;
     page += 1;
