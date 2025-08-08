@@ -284,12 +284,24 @@ async function startBackupProcess(token) {
       collectionTree,
     );
 
-    // Step 3f: Incremental fetch and merge
-    sendStatusUpdate(
-      'Fetching incremental changes...',
-      'info',
-      'fetching_raindrops',
-    );
+    // Step 3f: Fetch and merge
+    const isInitialSync =
+      syncCheck.reason === 'missing_local_folder' ||
+      syncCheck.reason === 'empty_local_folder';
+
+    if (isInitialSync) {
+      sendStatusUpdate(
+        'Fetching all raindrops for initial sync...',
+        'info',
+        'fetching_raindrops',
+      );
+    } else {
+      sendStatusUpdate(
+        'Fetching incremental changes...',
+        'info',
+        'fetching_raindrops',
+      );
+    }
 
     let totalBookmarksCreated = 0;
     let totalBookmarksUpdated = 0;
@@ -379,59 +391,78 @@ async function startBackupProcess(token) {
       }
     }
 
-    // Process additions/updates since lastProcessedDate (or 0 if missing_local_folder)
+    // Process additions/updates
+    // For initial sync, process all pages; otherwise only since lastProcessedDate
     const lastProcessedDate = (await chrome.storage.sync.get(['lastProcessedChangeDate'])).lastProcessedChangeDate || 0;
 
-    await fetchRaindropsSince(
-      token,
-      lastProcessedDate,
-      async (items, pageNumber, totalBefore) => {
-        sendStatusUpdate(
-          `Merging page ${pageNumber + 1}: ${items.length} changed raindrops...`,
-          'info',
-          'processing_raindrops',
-        );
-        for (const r of items) {
-          await upsertRaindrop(r);
-        }
-      },
-      { perPage: 50 },
-    );
-
-    // Process deletions since lastProcessedDate by checking Trash
-    await fetchDeletedSince(
-      token,
-      lastProcessedDate,
-      async (deletedItems) => {
-        // Remove by id mapping primarily; fallback by URL if mapping missing
-        for (const d of deletedItems) {
-          const mapKey = String(d._id ?? '');
-          const mapped = mapKey ? raindropIdToBookmarkId[mapKey] : undefined;
-          if (mapped) {
-            try {
-              await chrome.bookmarks.remove(mapped);
-              delete raindropIdToBookmarkId[mapKey];
-              continue;
-            } catch (_) {
-              // fall back to URL
-            }
+    if (isInitialSync) {
+      // Full import using paginated fetch of all items (still streaming pages to reduce memory)
+      await fetchRaindropsPaginated(
+        token,
+        async (items, pageNumber) => {
+          sendStatusUpdate(
+            `Creating page ${pageNumber + 1}: ${items.length} raindrops...`,
+            'info',
+            'processing_raindrops',
+          );
+          for (const r of items) {
+            await upsertRaindrop(r);
           }
-          if (d.link) {
-            const folders = Array.from(new Set(collectionToFolderMap.values()));
-            for (const folderId of folders) {
-              const children = await chrome.bookmarks.getChildren(folderId);
-              const hit = children.find((n) => n.url === d.link);
-              if (hit) {
-                try {
-                  await chrome.bookmarks.remove(hit.id);
-                } catch (_) {}
+        },
+        { collectionId: 0, perPage: 50, nested: true, sort: '-created' },
+      );
+    } else {
+      await fetchRaindropsSince(
+        token,
+        lastProcessedDate,
+        async (items, pageNumber) => {
+          sendStatusUpdate(
+            `Merging page ${pageNumber + 1}: ${items.length} changed raindrops...`,
+            'info',
+            'processing_raindrops',
+          );
+          for (const r of items) {
+            await upsertRaindrop(r);
+          }
+        },
+        { perPage: 50 },
+      );
+
+      // Process deletions since lastProcessedDate by checking Trash
+      await fetchDeletedSince(
+        token,
+        lastProcessedDate,
+        async (deletedItems) => {
+          // Remove by id mapping primarily; fallback by URL if mapping missing
+          for (const d of deletedItems) {
+            const mapKey = String(d._id ?? '');
+            const mapped = mapKey ? raindropIdToBookmarkId[mapKey] : undefined;
+            if (mapped) {
+              try {
+                await chrome.bookmarks.remove(mapped);
+                delete raindropIdToBookmarkId[mapKey];
+                continue;
+              } catch (_) {
+                // fall back to URL
+              }
+            }
+            if (d.link) {
+              const folders = Array.from(new Set(collectionToFolderMap.values()));
+              for (const folderId of folders) {
+                const children = await chrome.bookmarks.getChildren(folderId);
+                const hit = children.find((n) => n.url === d.link);
+                if (hit) {
+                  try {
+                    await chrome.bookmarks.remove(hit.id);
+                  } catch (_) {}
+                }
               }
             }
           }
-        }
-      },
-      { perPage: 50 },
-    );
+        },
+        { perPage: 50 },
+      );
+    }
 
     sendStatusUpdate(
       `Merge completed: ${totalBookmarksCreated} created, ${totalBookmarksUpdated} updated, ${totalBookmarksSkipped} skipped, ${totalBookmarksErrors} errors`,
